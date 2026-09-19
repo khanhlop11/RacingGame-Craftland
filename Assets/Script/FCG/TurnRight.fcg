@@ -1,0 +1,24 @@
+// TurnRight.fcg — Gắn vào Button rẽ phải trong UI
+// Platform: Client
+
+import "StdLibrary.fcc" as std
+import "Player.fcc" as player
+import "Hud.fcc" as hud
+import "EditorGenLib.fcc" as EditorGenLib
+import "./Kart/KartInputActions.fcg" as KartInputActions
+
+[platform_client]
+graph TurnRight {
+    event OnPressed(p entity<Player>) {
+        KartInputActions.PressTurnRight(p)
+    }
+    
+    // NHẤN ĐÚP: Kích hoạt Drift khi nhấp đúp rẽ phải
+    event OnDoubleTapped(p entity<Player>) {
+        KartInputActions.DoubleTapTurnRight(p)
+    }
+    
+    event OnReleased(p entity<Player>) {
+        KartInputActions.ReleaseTurnRight(p)
+    }
+}

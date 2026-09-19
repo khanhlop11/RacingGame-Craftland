@@ -1,0 +1,17 @@
+// KartCarFactory.fcg — car prefab registry helpers
+// Platform: Client
+// Purpose: keep car prefab registration outside RacingMovement while preserving asset selection behavior.
+
+import "List.fcc" as list
+import "EditorGenLib.fcc" as EditorGenLib
+
+[platform_client]
+static graph KartCarFactory {
+    func CreateDefaultCarPrefabList() List<object> {
+        var carPrefabList = list.New(0, 10)
+        list.Append(carPrefabList, EditorGenLib.EResPrefab.CR001 as object)
+        list.Append(carPrefabList, EditorGenLib.EResPrefab.CR002 as object)
+        list.Append(carPrefabList, EditorGenLib.EResPrefab.CR003 as object)
+        return carPrefabList as List<object>
+    }
+}

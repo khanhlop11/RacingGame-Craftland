@@ -1,0 +1,13 @@
+import "StdLibrary.fcc" as StdLib
+import "EditorGenLib.fcc" as EditorLib
+import "Camera.fcc" as Camera
+
+[platform_client]
+graph Script {
+    //Executed when entity is created
+    event OnAwake() {
+        var p = thisEntity as entity<Player>
+        var camera = GetCurrentCamera(p)
+        camera<CustomCamera>.FOV = 150
+    }
+}

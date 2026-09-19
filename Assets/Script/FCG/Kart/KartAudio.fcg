@@ -1,0 +1,230 @@
+// KartAudio.fcg — Xử lý toàn bộ âm thanh xe đua (Engine, Drift, Nitro 1/2/3, Accel, Deacc, Countdown 3-2-1, Go, Finish)
+// Platform: Client
+
+import "StdLibrary.fcc" as std
+import "Playable.fcc" as playable
+import "Animation.fcc" as animation
+import "EditorGenLib.fcc" as EditorGenLib
+import "Math.fcc" as math
+
+[platform_client]
+static graph KartAudio {
+    
+    // Khởi tạo toàn bộ các Entity âm thanh trên Client
+    func InitAllSounds(out var engineSnd entity<SoundEffect>, out var skidSnd entity<SoundEffect>, out var n1Snd entity<SoundEffect>, out var n2Snd entity<SoundEffect>, out var n3Snd entity<SoundEffect>, out var upSnd entity<SoundEffect>, out var deaccSnd entity<SoundEffect>, out var countSnd entity<SoundEffect>, out var goSnd entity<SoundEffect>, out var finishSnd entity<SoundEffect>) {
+        // 1. Động cơ (Loop autoPlay)
+        playable.CreateSoundClient(out var eSnd, EditorGenLib.EResSound.Endine as SoundEffectType, animation.LoopType.Loop, true)
+        engineSnd = eSnd
+        
+        // 2. Drift lốp xe (Loop)
+        playable.CreateSoundClient(out var sSnd, EditorGenLib.EResSound.Skid as SoundEffectType, animation.LoopType.Loop, false)
+        skidSnd = sSnd
+
+        // 3. Nitro 3 Cấp (One-shot bùng nổ tức thì)
+        playable.CreateSoundClient(out var n1, EditorGenLib.EResSound.Nitro_1 as SoundEffectType, animation.LoopType.Default, false)
+        n1Snd = n1
+        playable.CreateSoundClient(out var n2, EditorGenLib.EResSound.Nitro_2 as SoundEffectType, animation.LoopType.Default, false)
+        n2Snd = n2
+        playable.CreateSoundClient(out var n3, EditorGenLib.EResSound.Nitro_3 as SoundEffectType, animation.LoopType.Default, false)
+        n3Snd = n3
+
+        // 4. Thốc ga (Up) & Dồn số (Deacc)
+        playable.CreateSoundClient(out var up, EditorGenLib.EResSound.Up as SoundEffectType, animation.LoopType.Default, false)
+        upSnd = up
+        playable.CreateSoundClient(out var deacc, EditorGenLib.EResSound.High_Deacc as SoundEffectType, animation.LoopType.Default, false)
+        deaccSnd = deacc
+
+        // 5. Đếm ngược 3-2-1, GO, Về đích (Finish / Booyah)
+        playable.CreateSoundClient(out var cSnd, EditorGenLib.EResSound.Three_Two_One as SoundEffectType, animation.LoopType.Default, false)
+        countSnd = cSnd
+        playable.CreateSoundClient(out var gSnd, EditorGenLib.EResSound.Go as SoundEffectType, animation.LoopType.Default, false)
+        goSnd = gSnd
+        playable.CreateSoundClient(out var fSnd, EditorGenLib.EResSound.Finish as SoundEffectType, animation.LoopType.Default, false)
+        finishSnd = fSnd
+
+        // Cấu hình 2D Sound trên toàn bộ với Max Volume 100
+        if (engineSnd as entity) != nil {
+            engineSnd<SoundEffect>.Is3D = false
+            engineSnd<SoundEffect>.Volume = 15
+            engineSnd<SoundEffect>.Speed = 0.70
+        }
+        if (skidSnd as entity) != nil {
+            skidSnd<SoundEffect>.Is3D = false
+            skidSnd<SoundEffect>.Volume = 100
+        }
+        if (n1Snd as entity) != nil {
+            n1Snd<SoundEffect>.Is3D = false
+            n1Snd<SoundEffect>.Volume = 100
+        }
+        if (n2Snd as entity) != nil {
+            n2Snd<SoundEffect>.Is3D = false
+            n2Snd<SoundEffect>.Volume = 100
+        }
+        if (n3Snd as entity) != nil {
+            n3Snd<SoundEffect>.Is3D = false
+            n3Snd<SoundEffect>.Volume = 100
+        }
+        if (upSnd as entity) != nil {
+            upSnd<SoundEffect>.Is3D = false
+            upSnd<SoundEffect>.Volume = 60
+        }
+        if (deaccSnd as entity) != nil {
+            deaccSnd<SoundEffect>.Is3D = false
+            deaccSnd<SoundEffect>.Volume = 100
+        }
+        if (countSnd as entity) != nil {
+            countSnd<SoundEffect>.Is3D = false
+            countSnd<SoundEffect>.Volume = 100
+        }
+        if (goSnd as entity) != nil {
+            goSnd<SoundEffect>.Is3D = false
+            goSnd<SoundEffect>.Volume = 100
+        }
+        if (finishSnd as entity) != nil {
+            finishSnd<SoundEffect>.Is3D = false
+            finishSnd<SoundEffect>.Volume = 100
+        }
+    }
+
+    // 1. Cập nhật âm thanh động cơ (Phân bổ âm lượng và vòng tua tuyến tính, mượt mà 100% từ 0 -> 300 km/h)
+    func UpdateEngine(engineSnd entity<SoundEffect>, isEnginePlaying bool, speedKmh float, topSpeed float, isLocked bool, isBoosting bool, isFinished bool) bool {
+        if (engineSnd as entity) == nil { return false }
+        
+        // Tắt hoàn toàn âm thanh khi Khóa xe / Reset hoặc Đã về đích
+        if isLocked || isFinished {
+            if isEnginePlaying {
+                engineSnd<SoundEffect>.Volume = 0
+                playable.Pause(engineSnd as entity<Playable>)
+            }
+            return false
+        }
+
+        // Bắt đầu phát khi vào trận / mở khóa xe xuất phát
+        if !isEnginePlaying {
+            engineSnd<SoundEffect>.Volume = 15
+            playable.Play(engineSnd as entity<Playable>, false)
+        }
+
+        var speedRatio = speedKmh / topSpeed
+        if speedRatio < 0.0 { speedRatio = 0.0 }
+        if speedRatio > 1.3 { speedRatio = 1.3 }
+
+        // Pitch tăng mượt từ 0.70 lên 1.55 khi max tốc
+        var pitch = 0.70 + speedRatio * 0.85
+        if isBoosting { pitch += 0.25 }
+        engineSnd<SoundEffect>.Speed = pitch
+
+        // Âm lượng phân bổ mượt mà:
+        // - Khi dừng/chạy chậm (0 -> 50 km/h): Volume từ 15% -> 27% (êm dịu, không gầm to)
+        // - Khi tăng tốc trung bình (50 -> 150 km/h): Volume từ 27% -> 52%
+        // - Khi chạy tốc độ cao (150 -> 300 km/h): Volume từ 52% -> 90%
+        // - Bật Nitro: 100%
+        var volFloat = 15.0 + speedRatio * 75.0
+        if isBoosting { volFloat = 100.0 }
+        if volFloat > 100.0 { volFloat = 100.0 }
+        if volFloat < 15.0 { volFloat = 15.0 }
+        engineSnd<SoundEffect>.Volume = math.Round(volFloat)
+        return true
+    }
+
+    // 2. Cập nhật âm thanh Drift lốp xe (Tự động giảm nhỏ khi trượt thẳng, tăng to khi ôm cua gắt)
+    func UpdateDrift(skidSnd entity<SoundEffect>, isDriftActive bool, isSkidPlaying bool, driftBlend float, isTurning bool, speedKmh float) bool {
+        if (skidSnd as entity) == nil { return false }
+        
+        var shouldPlay = isDriftActive && speedKmh >= 15.0
+
+        if !shouldPlay {
+            if isSkidPlaying {
+                skidSnd<SoundEffect>.Volume = 0
+                playable.Pause(skidSnd as entity<Playable>)
+            }
+            return false
+        }
+
+        // Tính toán âm lượng theo tốc độ & góc ôm cua:
+        // - Khi chỉ trượt thẳng (không cua): Volume nhỏ 35% - 50%
+        // - Khi ôm cua gắt (có rẽ lái & drift sâu): Volume tăng vọt lên 80% - 100%
+        var speedRatio = speedKmh / 160.0
+        if speedRatio < 0.0 { speedRatio = 0.0 }
+        if speedRatio > 1.0 { speedRatio = 1.0 }
+
+        var volFloat = 18.0 + speedRatio * 18.0 + driftBlend * 32.0
+        if isTurning { volFloat += 18.0 }
+
+        if volFloat > 100.0 { volFloat = 100.0 }
+        if volFloat < 18.0 { volFloat = 18.0 }
+        var targetVol = math.Round(volFloat)
+
+        // Bắt đầu drift: Kích hoạt Play ngay lập tức
+        if !isSkidPlaying {
+            skidSnd<SoundEffect>.Volume = targetVol
+            playable.Play(skidSnd as entity<Playable>, false)
+        } else {
+            skidSnd<SoundEffect>.Volume = targetVol
+        }
+        return true
+    }
+
+    // 3. Kích hoạt âm thanh Nitro theo đúng cấp độ (Tier 1/2/3) - Max Volume 100
+    func TriggerNitro(tier int, n1Snd entity<SoundEffect>, n2Snd entity<SoundEffect>, n3Snd entity<SoundEffect>) {
+        if tier == 3 && (n3Snd as entity) != nil {
+            n3Snd<SoundEffect>.Volume = 100
+            playable.Play(n3Snd as entity<Playable>, true)
+        } else if tier == 2 && (n2Snd as entity) != nil {
+            n2Snd<SoundEffect>.Volume = 100
+            playable.Play(n2Snd as entity<Playable>, true)
+        } else if (n1Snd as entity) != nil {
+            n1Snd<SoundEffect>.Volume = 100
+            playable.Play(n1Snd as entity<Playable>, true)
+        }
+    }
+
+    // 4. Kích hoạt tiếng thốc ga / lên số (Up)
+    func TriggerAccel(upSnd entity<SoundEffect>) {
+        if (upSnd as entity) == nil { return }
+        upSnd<SoundEffect>.Volume = 100
+        playable.Play(upSnd as entity<Playable>, true)
+    }
+
+    // 5. Kích hoạt tiếng nhả ga / phanh dồn số ở tốc độ cao (High Deacc)
+    func TriggerDeacc(deaccSnd entity<SoundEffect>) {
+        if (deaccSnd as entity) == nil { return }
+        deaccSnd<SoundEffect>.Volume = 100
+        playable.Play(deaccSnd as entity<Playable>, true)
+    }
+
+    // 6. Kích hoạt tiếng đếm ngược 3-2-1
+    func TriggerCountdown(countSnd entity<SoundEffect>) {
+        if (countSnd as entity) == nil { return }
+        countSnd<SoundEffect>.Volume = 100
+        playable.Play(countSnd as entity<Playable>, true)
+    }
+
+    // 7. Kích hoạt tiếng xuất phát GO!
+    func TriggerGo(goSnd entity<SoundEffect>) {
+        if (goSnd as entity) == nil { return }
+        goSnd<SoundEffect>.Volume = 100
+        playable.Play(goSnd as entity<Playable>, true)
+    }
+
+    // 8. Kích hoạt tiếng về đích / Booyah!
+    func TriggerFinish(finishSnd entity<SoundEffect>) {
+        if (finishSnd as entity) == nil { return }
+        finishSnd<SoundEffect>.Volume = 100
+        playable.Play(finishSnd as entity<Playable>, true)
+    }
+
+    // Dừng toàn bộ âm thanh (Dùng khi Reset hoặc Rời trận)
+    func StopAll(engineSnd entity<SoundEffect>, skidSnd entity<SoundEffect>, n1Snd entity<SoundEffect>, n2Snd entity<SoundEffect>, n3Snd entity<SoundEffect>, upSnd entity<SoundEffect>, deaccSnd entity<SoundEffect>, countSnd entity<SoundEffect>, goSnd entity<SoundEffect>, finishSnd entity<SoundEffect>) {
+        if (engineSnd as entity) != nil { engineSnd<SoundEffect>.Volume = 0 }
+        if (skidSnd as entity) != nil { skidSnd<SoundEffect>.Volume = 0; playable.Pause(skidSnd as entity<Playable>) }
+        if (n1Snd as entity) != nil { n1Snd<SoundEffect>.Volume = 0; playable.Pause(n1Snd as entity<Playable>) }
+        if (n2Snd as entity) != nil { n2Snd<SoundEffect>.Volume = 0; playable.Pause(n2Snd as entity<Playable>) }
+        if (n3Snd as entity) != nil { n3Snd<SoundEffect>.Volume = 0; playable.Pause(n3Snd as entity<Playable>) }
+        if (upSnd as entity) != nil { upSnd<SoundEffect>.Volume = 0; playable.Pause(upSnd as entity<Playable>) }
+        if (deaccSnd as entity) != nil { deaccSnd<SoundEffect>.Volume = 0; playable.Pause(deaccSnd as entity<Playable>) }
+        if (countSnd as entity) != nil { countSnd<SoundEffect>.Volume = 0; playable.Pause(countSnd as entity<Playable>) }
+        if (goSnd as entity) != nil { goSnd<SoundEffect>.Volume = 0; playable.Pause(goSnd as entity<Playable>) }
+        if (finishSnd as entity) != nil { finishSnd<SoundEffect>.Volume = 0; playable.Pause(finishSnd as entity<Playable>) }
+    }
+}

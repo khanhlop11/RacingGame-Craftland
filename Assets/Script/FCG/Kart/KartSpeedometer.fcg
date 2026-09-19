@@ -1,0 +1,162 @@
+// KartSpeedometer.fcg — Speedometer and debug telemetry helpers
+// Platform: Client
+// Purpose: simplified speed measurement + UI telemetry formatting.
+
+import "Math.fcc" as math
+
+[platform_client]
+static graph KartSpeedometer {
+    func CalcMeasuredSpeedKmh(vel Vector3, fwd3D Vector3, speedUnitScale float) float {
+        var fwdSpd = vel.X * fwd3D.X + vel.Y * fwd3D.Y + vel.Z * fwd3D.Z
+        var absSpd = math.Abs(fwdSpd) as float
+        return absSpd * 36.0 * speedUnitScale
+    }
+
+    func CalcGroundSpeedKmh(vel Vector3, fwd3D Vector3, speedUnitScale float) float {
+        var planarSpeed = math.Sqrt(vel.X * vel.X + vel.Z * vel.Z) as float
+        var absSpeed = math.Abs(planarSpeed) as float
+        return absSpeed * 36.0 * speedUnitScale
+    }
+
+    func CalcPositionGroundSpeedKmh(prevPos Vector3, currentPos Vector3, dt float, speedUnitScale float, maxAcceptedKmh float) float {
+        if dt <= 0.0001 || speedUnitScale <= 0.0 || maxAcceptedKmh <= 0.0 { return 0.0 }
+        var dx = currentPos.X - prevPos.X
+        var dz = currentPos.Z - prevPos.Z
+        var planarSpeed = math.Sqrt(dx * dx + dz * dz) / dt
+        var sampledKmh = planarSpeed * 36.0 * speedUnitScale
+        if sampledKmh > maxAcceptedKmh { return 0.0 }
+        return sampledKmh
+    }
+
+    func ClampTelemetryKmh(valueKmh float, maxKmh float) float {
+        var safeMax = maxKmh
+        if safeMax < 0.0 { safeMax = 0.0 }
+        var result = valueKmh
+        if result < 0.0 { result = 0.0 }
+        if result > safeMax { result = safeMax }
+        return result
+    }
+
+    func CalcDriveKmh(driveForwardSpeed float, speedUnitScale float) float {
+        var absSpeed = math.Abs(driveForwardSpeed) as float
+        return absSpeed * 36.0 * speedUnitScale
+    }
+
+    func CalcActualKmh(clientFwdSpd float, speedUnitScale float) float {
+        var absSpeed = math.Abs(clientFwdSpd) as float
+        return absSpeed * 36.0 * speedUnitScale
+    }
+
+    func CalcVelocityMagnitudeKmh(vel Vector3, speedUnitScale float) float {
+        var speedMag = math.Sqrt(vel.X * vel.X + vel.Y * vel.Y + vel.Z * vel.Z)
+        return speedMag * 36.0 * speedUnitScale
+    }
+
+    func CalcPositionDeltaKmh(prevPos Vector3, currentPos Vector3, dt float, speedUnitScale float) float {
+        if dt <= 0.0 { return 0.0 }
+        var dx = currentPos.X - prevPos.X
+        var dy = currentPos.Y - prevPos.Y
+        var dz = currentPos.Z - prevPos.Z
+        var speedMag = math.Sqrt(dx * dx + dy * dy + dz * dz) / dt
+        return speedMag * 36.0 * speedUnitScale
+    }
+
+    func CalcDebugUiKmh(forwardKmh float, velocityKmh float, sampledMoveKmh float, topSpeedKmh float, boostTopSpeedKmh float) float {
+        var result = forwardKmh
+
+        // Debug HUD: intentionally uncapped. Show the largest measured speed source
+        // so physics spikes/wall-slide bugs are visible instead of hidden by clamps.
+        if velocityKmh > result {
+            result = velocityKmh
+        }
+
+        if sampledMoveKmh > result { result = sampledMoveKmh }
+
+        return result
+    }
+
+    func CalcRawKmh(driveKmh float, actualKmh float) float {
+        if actualKmh < driveKmh { return actualKmh }
+        return driveKmh
+    }
+
+    func CalcSnapThreshold(maxSpeed float, speedUnitScale float) float {
+        return maxSpeed * 0.80 * 36.0 * speedUnitScale
+    }
+
+    func CalcVisualTopSpeed(maxSpeed float, speedUnitScale float) float {
+        return maxSpeed * 0.85 * 36.0 * speedUnitScale
+    }
+
+    func CalcTargetUIKmh(rawKmh float, snapThreshold float, visualTopSpeed float, accelInput float) float {
+        if rawKmh >= snapThreshold && accelInput > 0.0 {
+            return visualTopSpeed
+        }
+        return rawKmh
+    }
+
+    func CalcNeedleSmoothness(isReversing bool, isStableGrounded bool) float {
+        if isReversing || !isStableGrounded {
+            return 12.0
+        }
+        return 5.0
+    }
+
+    func CalcCurrentSpeedKmhNext(currentSpeedKmh float, targetUIKmh float, dt float, needleSmoothness float) float {
+        var factor = 1.0 - math.Exponentiation(2.71828183, -(needleSmoothness * dt))
+        if factor < 0.0 { factor = 0.0 }
+        if factor > 1.0 { factor = 1.0 }
+        return currentSpeedKmh + (targetUIKmh - currentSpeedKmh) * factor
+    }
+
+    func CalcSpeedDisplayTimerNext(speedDisplayTimer float, dt float) float {
+        return speedDisplayTimer - dt
+    }
+
+    func ShouldLogSpeed(speedDisplayTimer float) bool {
+        return speedDisplayTimer <= 0.0
+    }
+
+    func ResetSpeedDisplayTimer() float {
+        return 1.0
+    }
+
+    func RoundToIntLikeFloat(value float) float {
+        return math.Floor(value + 0.5)
+    }
+
+    func RoundNitro1Decimal(nitroCharge float) float {
+        return math.Floor(nitroCharge * 10.0 + 0.5) / 10.0
+    }
+
+    func BuildDriftState(isDriftTurning bool, isDrift bool, isReversing bool) string {
+        if isDriftTurning {
+            return "⚡DRIFT+CUA"
+        }
+        if isDrift {
+            return "DRIFT"
+        }
+        if isReversing {
+            return "🅿️PHANH"
+        }
+        return ""
+    }
+
+    func BuildBoostState(isBoosting bool) string {
+        if isBoosting { return " 🚀BOOST" }
+        return ""
+    }
+
+    func BuildTelemetryMessage(kmhInt float, driftState string, boostStr string, nitroRounded float, maxNitroCharge float, rollInt float, wheelCount int) string {
+        return ("🚗 " + kmhInt + " km/h | " + driftState + boostStr + " | Nitro: " + nitroRounded + "/" + maxNitroCharge + " | Roll°: " + rollInt + " WheelNodes: " + wheelCount) as string
+    }
+
+    func BuildTelemetryMessageFromState(currentSpeedKmh float, currentRollAngle float, wheelCount int, isDriftTurning bool, isDrift bool, isReversing bool, isBoosting bool, nitroCharge float, maxNitroCharge float) string {
+        var kmhInt = RoundToIntLikeFloat(currentSpeedKmh)
+        var rollInt = RoundToIntLikeFloat(currentRollAngle)
+        var driftState = BuildDriftState(isDriftTurning, isDrift, isReversing)
+        var nitroRounded = RoundNitro1Decimal(nitroCharge)
+        var boostStr = BuildBoostState(isBoosting)
+        return BuildTelemetryMessage(kmhInt, driftState, boostStr, nitroRounded, maxNitroCharge, rollInt, wheelCount)
+    }
+}

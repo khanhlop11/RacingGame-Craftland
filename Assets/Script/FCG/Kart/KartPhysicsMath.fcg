@@ -1,0 +1,127 @@
+// KartPhysicsMath.fcg — Pure scalar physics helpers
+// Platform: Client
+// Purpose: Lerp-based acceleration + physics scalar formulas (MarioKart-style).
+import "StdLibrary.fcc" as std
+import "Math.fcc" as math
+import "./KartMath.fcg" as KartMath
+[platform_client]
+static graph KartPhysicsMath {
+    func LerpToSpeed(curSpeed float, targetSpeed float, lerpRate float, dt float) float {
+        var factor = KartMath.CalcExpLerpFactor(lerpRate, dt)
+        return curSpeed + (targetSpeed - curSpeed) * factor as float
+    }
+
+    func CalcBoostBlendNext(boostBlend float, boostTarget float, boostRampIn float, boostRampOut float, dt float) float {
+        var boostLerpSpeed = boostRampOut
+        if boostTarget > boostBlend { boostLerpSpeed = boostRampIn }
+        var factor = KartMath.CalcExpLerpFactor(boostLerpSpeed, dt)
+        var next = boostBlend + (boostTarget - boostBlend) * factor
+        if next < 0.0 { next = 0.0 }
+        if next > 1.0 { next = 1.0 }
+        return next as float
+    }
+
+    func CalcMaxSpeed(physTopSpeed float, physBoostTopSpeed float, boostPower float, boostBlend float, postDriftBoostTimer float, postDriftNitroTopMult float, isDriftActive bool, driftSustainRatio float, driftBlend float, isTurningLeft bool, isTurningRight bool, turnSpeedRatio float) float {
+        var maxSpeed = physTopSpeed
+        if boostPower > 0.02 {
+            var rawBoostMax = physBoostTopSpeed
+            if postDriftBoostTimer > 0.0 {
+                rawBoostMax = rawBoostMax * postDriftNitroTopMult
+            }
+            maxSpeed = math.Lerp(physTopSpeed, rawBoostMax, boostBlend)
+        } else if isDriftActive {
+            maxSpeed = physTopSpeed * math.Lerp(1.0, driftSustainRatio, driftBlend)
+        } else if isTurningLeft || isTurningRight {
+            maxSpeed = physTopSpeed * turnSpeedRatio
+        }
+        return maxSpeed as float
+    }
+
+    func CalcAccelPower(physAccel float, physBoostAccel float, boostPower float, boostBlend float, postDriftBoostTimer float, postDriftNitroAccelMult float) float {
+        var accelPwr = physAccel
+        if boostPower > 0.02 {
+            var rawBoostAccel = physBoostAccel
+            if postDriftBoostTimer > 0.0 {
+                rawBoostAccel = rawBoostAccel * postDriftNitroAccelMult
+            }
+            accelPwr = math.Lerp(physAccel, rawBoostAccel, boostBlend)
+        }
+        return accelPwr as float
+    }
+
+    func CalcAccelerationRamp(curFwdSpd float, maxSpeed float, accelerationCurve float) float {
+        var safeMax = maxSpeed
+        if safeMax < 0.01 { safeMax = 0.01 }
+        var spdRatio = math.Abs(curFwdSpd) / safeMax
+        if spdRatio > 1.0 { spdRatio = 1.0 }
+        
+        // Launch boost: only applies at 0-20% speed range
+        // Max multiplier capped at 2.0x (not 10x)
+        var launchThreshold = 0.2  // Only boost below 20% of max speed
+        
+        if spdRatio < launchThreshold {
+            // Smooth ramp from 2.0x at 0% to 1.0x at 20%
+            var launchBlend = spdRatio / launchThreshold
+            return math.Lerp(2.0, 1.0, launchBlend) as float
+        }
+        
+        // Above 20% speed: no multiplier (realistic 1:1 acceleration)
+        return 1.0 as float
+    }
+
+    func CalcSpeedLimitMultiplier(curFwdSpd float, maxSpeed float, limitBuffer float) float {
+        var currentSpd = math.Abs(curFwdSpd)
+        var speedLimitMultiplier = 1.0
+        if currentSpd >= maxSpeed {
+            speedLimitMultiplier = 0.0
+        } else if currentSpd > maxSpeed - limitBuffer {
+            speedLimitMultiplier = (maxSpeed - currentSpd) / limitBuffer
+        }
+        return speedLimitMultiplier as float
+    }
+
+    func CalcTractionFactor(curLatSpd float, maxSpeed float, driftBlend float, boostPower float) float {
+        var maxAbsSpd = math.Abs(maxSpeed)
+        if maxAbsSpd < 0.05 { maxAbsSpd = 0.05 }
+        var latN = math.Abs(curLatSpd)
+        var latRatio = latN / (maxAbsSpd + 0.15)
+        if latRatio > 1.0 { latRatio = 1.0 }
+        var gripUse = latRatio * 0.55 + driftBlend * 0.20 + boostPower * 0.12
+        if gripUse > 0.75 { gripUse = 0.75 }
+        return (1.0 - gripUse) as float
+    }
+
+    func ClampForwardSpeed(curFwdSpd float, maxSpeed float) float {
+        var next = curFwdSpd
+        if next > maxSpeed { next = maxSpeed }
+        if next < -maxSpeed { next = -maxSpeed }
+        return next as float
+    }
+
+    func ClampPlanarVelocity(vel Vector3, maxPlanarSpeed float) Vector3 {
+        var safeMax = maxPlanarSpeed
+        if safeMax < 0.01 { safeMax = 0.01 }
+        var planarSpeed = math.Sqrt(vel.X * vel.X + vel.Z * vel.Z) as float
+        if planarSpeed > safeMax {
+            var ratio = safeMax / planarSpeed
+            vel.X = vel.X * ratio
+            vel.Z = vel.Z * ratio
+        }
+        return vel as Vector3
+    }
+
+    func CalcDownforceSpeedRatio(currentSpeedKmh float, downforceStart float, topSpeed float) float {
+        var ratio = (currentSpeedKmh - downforceStart) / (topSpeed - downforceStart)
+        if ratio < 0.0 { ratio = 0.0 }
+        if ratio > 1.0 { ratio = 1.0 }
+        return ratio as float
+    }
+
+    func CalcExtraDownforce(downforceMax float, downforceSpeedRatio float) float {
+        return (downforceMax * downforceSpeedRatio) as float
+    }
+
+    func CalcTotalGroundForce(groundGravity float, extraDownforce float) float {
+        return (groundGravity + extraDownforce) as float
+    }
+}

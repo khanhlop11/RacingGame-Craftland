@@ -1,0 +1,85 @@
+import "Math.fcc" as math
+
+// ============================================================
+// KartSteeringMath.fcg
+// Pure scalar steering helpers for RacingMovement.
+//
+// Compiler-safe extraction:
+// - No Event parameter.
+// - No entity/component parameter.
+// - No Transform/Vector/Quaternion parameter.
+// - Only float/bool scalar calculations.
+// ============================================================
+[platform_client]
+static graph KartSteeringMath {
+
+    func CalcSteerRampNext(currentRamp float, turnInput float, dt float, steerRampSharp float) float {
+        var targetRamp = math.Abs(turnInput) as float
+        return currentRamp + (targetRamp - currentRamp) * (dt * steerRampSharp)
+    }
+
+    func CalcBaseSteer(steer float, driftSteer float, driftBlend float, isDriftActive bool, driftSteerAuthority float, isBoosting bool, boostSteerMult float, highSpeedSteerFactor float) float {
+        var baseSteer = steer + (driftSteer - steer) * driftBlend
+        if isDriftActive {
+            baseSteer = baseSteer * math.Lerp(1.0, driftSteerAuthority, driftBlend)
+        } else {
+            baseSteer = baseSteer * highSpeedSteerFactor
+        }
+        if isBoosting {
+            baseSteer = baseSteer * boostSteerMult
+        }
+        return baseSteer
+    }
+
+    func CalcSteerAuthority(isDriftActive bool, isStableGrounded bool) float {
+        var steerAuthority = 1.85
+        if isDriftActive {
+            steerAuthority = 1.95
+        } else if !isStableGrounded {
+            steerAuthority = 1.0
+        }
+        return steerAuthority
+    }
+
+    func ApplyCounterSteerBoost(turnRate float, turnInput float, curLatSpd float, driftBlend float, counterSteerBoost float) float {
+        if math.Abs(curLatSpd) <= 0.05 { return turnRate }
+        var latSign = 1.0
+        if curLatSpd < 0.0 { latSign = -1.0 }
+        if turnInput * latSign < 0.0 {
+            var boostedTurnRate = turnRate * (1.0 + counterSteerBoost * driftBlend)
+            return boostedTurnRate
+        }
+        return turnRate
+    }
+
+    func ApplyDriftYawAssist(turnRate float, turnInput float, speedKmh float, topSpeed float, driftYawAssist float, driftBlend float) float {
+        var speedFactor = speedKmh / topSpeed
+        if speedFactor > 1.0 { speedFactor = 1.0 }
+        var assistedTurnRate = turnRate + turnInput * driftYawAssist * driftBlend * (0.35 + speedFactor * 0.35)
+        return assistedTurnRate
+    }
+
+    func ApplyReverseSteerFlip(turnRate float, localFwdSpeed float) float {
+        if localFwdSpeed < -0.1 {
+            var flippedTurnRate = -turnRate
+            return flippedTurnRate
+        }
+        return turnRate
+    }
+
+    func CalcVisualSteerTarget(animTurnInput float) float {
+        var targetSteer = animTurnInput * 35.0
+        return targetSteer
+    }
+
+    func CalcVisualSteerLerpT(dt float) float {
+        var steerLerpT = dt * 10.0
+        if steerLerpT > 1.0 { steerLerpT = 1.0 }
+        return steerLerpT
+    }
+
+    func LerpVisualSteerAngle(currentSteerAngle float, targetSteer float, steerLerpT float) float {
+        var newSteerAngle = currentSteerAngle + (targetSteer - currentSteerAngle) * steerLerpT
+        return newSteerAngle
+    }
+}

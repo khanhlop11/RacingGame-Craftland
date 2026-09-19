@@ -1,0 +1,13 @@
+# Build & Temporary caches
+Cache/
+Libraries/
+Temp/
+*.lock
+*.log
+
+# Editor & AI tool configs
+.vscode/
+.aismith/
+.codex/
+.cursor/
+.craftland/

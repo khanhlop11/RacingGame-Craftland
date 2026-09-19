@@ -1,0 +1,111 @@
+// KartInputActions.fcg — Shared UI input actions for kart controls
+// Platform: Client
+// Purpose: keep button scripts thin; state still belongs to RacingMovement.
+
+import "StdLibrary.fcc" as std
+import "Player.fcc" as player
+import "../RacingMovement.fcg" as rm
+
+[platform_client]
+static graph KartInputActions {
+    func IsLocalPlayer(p entity<Player>) bool {
+        if p != std.GetLocalPlayer() { return false }
+        if p<rm>.CpIsRaceFinished { return false }
+        return true
+    }
+
+    func PressTurnLeft(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<rm>.IsTurningLeft = true
+        }
+    }
+
+    func ReleaseTurnLeft(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<rm>.IsTurningLeft = false
+            if !p<rm>.IsTurningRight {
+                p<rm>.IsDoubleTapDrifting = false
+                if !p<rm>.IsBrakeBtnPressed {
+                    p<rm>.IsBraking = false
+                }
+            }
+        }
+    }
+
+    func DoubleTapTurnLeft(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<rm>.IsTurningLeft = true
+            p<rm>.IsDoubleTapDrifting = true
+            p<rm>.IsBraking = true
+            if p<rm>.IsBoosting { p<rm>.IsBoosting = false; p<rm>.IsNitroRecovering = true }
+        }
+    }
+
+    func PressTurnRight(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<rm>.IsTurningRight = true
+        }
+    }
+
+    func ReleaseTurnRight(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<rm>.IsTurningRight = false
+            if !p<rm>.IsTurningLeft {
+                p<rm>.IsDoubleTapDrifting = false
+                if !p<rm>.IsBrakeBtnPressed {
+                    p<rm>.IsBraking = false
+                }
+            }
+        }
+    }
+
+    func DoubleTapTurnRight(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<rm>.IsTurningRight = true
+            p<rm>.IsDoubleTapDrifting = true
+            p<rm>.IsBraking = true
+            if p<rm>.IsBoosting { p<rm>.IsBoosting = false; p<rm>.IsNitroRecovering = true }
+        }
+    }
+
+    func PressBrake(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<rm>.IsBrakeBtnPressed = true
+            p<rm>.IsBraking = true
+
+            // Drift input cancels boost, same as old button behavior.
+            if p<rm>.IsBoosting { p<rm>.IsBoosting = false; p<rm>.IsNitroRecovering = true }
+        }
+    }
+
+    func ReleaseBrake(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<rm>.IsBrakeBtnPressed = false
+            if !p<rm>.IsDoubleTapDrifting {
+                p<rm>.IsBraking = false
+            }
+        }
+    }
+
+    func PressReverse(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<rm>.IsReversing = true
+        }
+    }
+
+    func ReleaseReverse(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<rm>.IsReversing = false
+        }
+    }
+
+    func PressBoost(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            if p<rm>.HasNitro && p<rm>.NitroCharge > 0.05 {
+                p<rm>.IsBoosting = true
+                LogInfo("🚀 NITRO! (" + p<rm>.NitroCharge + "s còn lại)")
+            }
+        }
+    }
+}
+

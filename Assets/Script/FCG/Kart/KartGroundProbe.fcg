@@ -1,0 +1,109 @@
+// KartGroundProbe.fcg — ground probe vector helpers
+// Platform: Client
+// Purpose: own small reusable raycast/probe vector checks while main orchestrator preserves probe order/state.
+import "Math.fcc" as math
+import "Physics.fcc" as physics
+
+[platform_client]
+static graph KartGroundProbe {
+    func IsValidHit(hitEnt entity, kartModel entity<Rigidbody>) bool {
+        return (hitEnt != nil && hitEnt != (kartModel as entity)) as bool
+    }
+
+    func CalcHorizontalForwardLength(hFwdX float, hFwdZ float) float {
+        var hFwdLen = math.Sqrt(hFwdX * hFwdX + hFwdZ * hFwdZ)
+        if hFwdLen < 0.001 { hFwdLen = 0.001 }
+        return hFwdLen as float
+    }
+
+    func NormalizeNormal(nx float, ny float, nz float) Vector3 {
+        var nLen = math.Sqrt(nx * nx + ny * ny + nz * nz)
+        if nLen > 0.0001 {
+            return Vector3{nx / nLen, ny / nLen, nz / nLen}
+        }
+        return Vector3{0.0, 1.0, 0.0}
+    }
+
+    func BlendNormal(lastValidNormal Vector3, targetNormal Vector3, dt float) Vector3 {
+        var normalLerpSpeed = dt * 5.0
+        var lerpN_X = math.Lerp(lastValidNormal.X, targetNormal.X, normalLerpSpeed)
+        var lerpN_Y = math.Lerp(lastValidNormal.Y, targetNormal.Y, normalLerpSpeed)
+        var lerpN_Z = math.Lerp(lastValidNormal.Z, targetNormal.Z, normalLerpSpeed)
+        return NormalizeNormal(lerpN_X, lerpN_Y, lerpN_Z)
+    }
+
+    func IsSideHit(rightHit bool, leftHit bool, upHit bool, fwdHit bool, hFwdHit bool, hitCount float) bool {
+        return (rightHit || leftHit || upHit || (fwdHit && hitCount < 2.0) || (hFwdHit && hitCount < 2.0)) as bool
+    }
+
+    func CalcSurfaceTransitionTimerNext(current float, dt float, hitCount float) float {
+        if hitCount < 2.0 { return (current + dt) as float }
+        return 0.0 as float
+    }
+
+    func ShouldCrashForward(hFwdHit bool, hFwdDist float, threshold float) bool {
+        return (hFwdHit && hFwdDist < threshold) as bool
+    }
+
+    func ShouldCrashSide(sideHit bool, sideDist float, threshold float) bool {
+        return (sideHit && sideDist < threshold) as bool
+    }
+
+    func CalcWheelNormalAccum(current float, hit bool, normalValue float, weight float) float {
+        if hit { return (current + normalValue * weight) as float }
+        return current as float
+    }
+
+    func CalcWheelWeightAccum(current float, hit bool, weight float) float {
+        if hit { return (current + weight) as float }
+        return current as float
+    }
+
+    func CalcProbeNormalAccum(current float, hit bool, dist float, threshold float, normalValue float, normalY float, baseWeight float, softWallThreshold float, probeGroundThreshold float, softScale float) float {
+        if hit && dist < threshold {
+            var w = baseWeight * (1.0 - (dist / threshold))
+            if normalY < softWallThreshold {
+                w = 0.0
+            } else if normalY < probeGroundThreshold {
+                w = w * softScale
+            }
+            if w > 0.0 { return (current + normalValue * w) as float }
+        }
+        return current as float
+    }
+
+    func CalcProbeWeightAccum(current float, hit bool, dist float, threshold float, normalY float, baseWeight float, softWallThreshold float, probeGroundThreshold float, softScale float) float {
+        if hit && dist < threshold {
+            var w = baseWeight * (1.0 - (dist / threshold))
+            if normalY < softWallThreshold {
+                w = 0.0
+            } else if normalY < probeGroundThreshold {
+                w = w * softScale
+            }
+            if w > 0.0 { return (current + w) as float }
+        }
+        return current as float
+    }
+
+    func CalcNormalizedAccumValue(value float, wSum float, fallback float) float {
+        if wSum > 0.0001 { return (value / wSum) as float }
+        return fallback as float
+    }
+
+    func CalcTargetNormal(hitCount float, nx float, ny float, nz float) Vector3 {
+        if hitCount < 1.0 { return Vector3{0.0, 1.0, 0.0} }
+        return Vector3{nx, ny, nz}
+    }
+
+    func CalcCrashWallDotForward(hFwdX float, hFwdZ float, hFwdNorm Vector3) float {
+        return (hFwdX * hFwdNorm.X + hFwdZ * hFwdNorm.Z) as float
+    }
+
+    func CalcCrashWallDotSide(hFwdX float, hFwdZ float, sideNorm Vector3) float {
+        return (hFwdX * sideNorm.X + hFwdZ * sideNorm.Z) as float
+    }
+
+    func ShouldCancelBoostOnCrash(absDot float, isBoosting bool) bool {
+        return (absDot > 0.6 && isBoosting) as bool
+    }
+}

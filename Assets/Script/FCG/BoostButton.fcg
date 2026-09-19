@@ -1,0 +1,39 @@
+// BoostButton.fcg — Gắn vào Button tăng tốc trong UI
+// Platform: Client
+
+import "StdLibrary.fcc" as std
+import "Player.fcc" as player
+import "Hud.fcc" as hud
+import "EditorGenLib.fcc" as EditorGenLib
+import "./Kart/KartInputActions.fcg" as KartInputActions
+
+[platform_client]
+graph BoostButton {
+
+    event OnAwake() {
+        // Ẩn ban đầu (chưa có nitro)
+        var p = std.GetLocalPlayer()
+        if p != nil {
+            var myUi = thisEntity<hud.UIWidget>.ParentUI
+            var myWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, myUi, "BoostButton")
+            if myWidget != nil {
+                myWidget<hud.UIWidget>.IsVisible = false
+            }
+        }
+    }
+
+    event ShowNitroButton() {
+        var p = std.GetLocalPlayer()
+        if p != nil {
+            var myUi = thisEntity<hud.UIWidget>.ParentUI
+            var myWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, myUi, "BoostButton")
+            if myWidget != nil {
+                myWidget<hud.UIWidget>.IsVisible = true
+            }
+        }
+    }
+
+    event OnPressed(p entity<Player>) {
+        KartInputActions.PressBoost(p)
+    }
+}

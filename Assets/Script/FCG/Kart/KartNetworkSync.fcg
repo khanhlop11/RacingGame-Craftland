@@ -1,0 +1,13 @@
+// ============================================================
+// KartNetworkSync.fcg
+// Reserved placeholder.
+//
+// Network dispatch is intentionally kept inline in RacingMovement.fcg
+// because the current compiler does not support Event as a function
+// parameter and reports unstable diagnostics when entity/component
+// payload building is moved into this helper.
+// ============================================================
+import "StdLibrary.fcc" as std
+[platform_client]
+static graph KartNetworkSync {
+}

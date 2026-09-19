@@ -1,0 +1,46 @@
+// ============================================================
+// KartCheckpoint.fcg
+// Checkpoint/Lap helper subsystem for RacingMovement.
+//
+// Compiler-safe extraction:
+// - No Event parameter.
+// - No entity/component parameter.
+// - Only pure string/bool/float calculation.
+// - RacingMovement owns state variables and event handlers.
+// ============================================================
+import "Convert.fcc" as convert
+
+[platform_client]
+static graph KartCheckpoint {
+
+    // Build string "LAP 1/3" hoặc "FINISH #1"
+    func BuildLapText(currentLap int, totalLaps int, isFinished bool, finishPos int) string {
+        if isFinished {
+            return "FINISH #" + convert.ToString(finishPos)
+        }
+        return "LAP " + convert.ToString(currentLap) + "/" + convert.ToString(totalLaps)
+    }
+
+    // Build string "P1" hoặc "" nếu đã finish
+    func BuildPositionText(position int, isFinished bool) string {
+        if isFinished {
+            return ""
+        }
+        return "P" + convert.ToString(position)
+    }
+
+    // Build time string "1:23.45"
+    func BuildTimeText(raceTime float) string {
+        var totalSeconds = raceTime as int
+        var minutes = totalSeconds / 60
+        var seconds = totalSeconds - (minutes * 60)
+        var secStr = convert.ToString(seconds)
+        if seconds < 10 { secStr = "0" + secStr }
+        return convert.ToString(minutes) + ":" + secStr
+    }
+
+    // Kiểm tra có nên dùng checkpoint respawn hay vị trí mặc định
+    func ShouldUseCheckpointRespawn(hasCheckpointRespawn bool) bool {
+        return hasCheckpointRespawn
+    }
+}

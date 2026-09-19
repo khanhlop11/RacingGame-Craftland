@@ -1,0 +1,41 @@
+// CarGhostSync.fcg
+// [platform_server] — Gắn vào Player entity
+// Vai trò: Clone CarToClone làm visual xe local, gắn vào Sphere để bám theo physics
+
+import "StdLibrary.fcc" as std
+import "EditorGenLib.fcc" as EditorGenLib
+
+[platform_server]
+graph CarGhostSync {
+
+    LocalCar    entity<Entity> = nil   // Visual xe của người chơi local (con của Sphere)
+    IsReady     bool = false
+
+    event OnAwake() {
+        var carTemplate = EditorGenLib.EResSceneMainScene.CarToClone as entity<Entity>
+        var sphere      = EditorGenLib.EResSceneMainScene.Sphere    as entity<Entity>
+
+        if carTemplate == nil {
+            LogInfo("❌ CarGhostSync: Không tìm thấy car template")
+            return
+        }
+        if sphere == nil {
+            LogInfo("❌ CarGhostSync: Không tìm thấy Sphere!")
+            return
+        }
+
+        // Clone visual xe, gắn làm con của Sphere để bám theo physics
+        std.Clone(out var localCarClone, carTemplate as entity)
+        LocalCar = localCarClone
+        if LocalCar != nil {
+            // ⚠️ QUAN TRỌNG: phải set World Position TRƯỚC khi gán Parent
+            // Engine Craftland tính LocalPosition dựa trên WorldPos tại thời điểm parenting
+            var spawnPos = sphere<Transform>.Position
+            LocalCar<Transform>.Position = Vector3{spawnPos.X, spawnPos.Y - 0.80, spawnPos.Z}
+            LocalCar<Transform>.Parent = sphere as entity<Transform>
+            LogInfo("✅ CarGhostSync: Visual xe đã gắn vào Sphere thành công!")
+        }
+
+        IsReady = true
+    }
+}

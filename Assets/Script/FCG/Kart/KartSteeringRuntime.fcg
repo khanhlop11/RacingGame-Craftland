@@ -1,0 +1,55 @@
+// KartSteeringRuntime.fcg — steering/orientation runtime helpers
+// Platform: Client
+// Purpose: own quaternion steering/orientation helper formulas.
+import "Math.fcc" as math
+
+[platform_client]
+static graph KartSteeringRuntime {
+    func ApplySteerRotation(physicsQuat Quaternion, nx float, ny float, nz float, turnRate float, dt float) Quaternion {
+        if turnRate > 0.001 || turnRate < -0.001 {
+            var steerQ = math.AxisAngleToQuaternion(Vector3{nx, ny, nz}, turnRate * dt)
+            return math.MultiplyQuaternion(steerQ, physicsQuat)
+        }
+        return physicsQuat as Quaternion
+    }
+
+    func ApplySurfaceAlignment(physicsQuat Quaternion, nx float, ny float, nz float, dt float, isDriftActive bool) Quaternion {
+        var curUp = math.RotateVector(Vector3{0.0, 1.0, 0.0}, physicsQuat)
+        var alignQ = math.QuaternionFromToRotation(curUp, Vector3{nx, ny, nz})
+        var targetQ = math.MultiplyQuaternion(alignQ, physicsQuat)
+        var alignSharp = 7.5
+        if isDriftActive { alignSharp = 3.8 }
+        var nextQ = math.SlerpQuaternion(physicsQuat, targetQ, dt * alignSharp)
+
+        // Chống nghiêng xe (Anti-Roll): Giới hạn góc Roll của xe tối đa [-8°, 8°]
+        // Đảm bảo xe luôn phẳng lì, đầm chắc như khối cầu 3.0, không bị taluy bẻ nghiêng
+        var euler = math.QuaternionToEulerAngle(nextQ)
+        var roll = euler.Z
+        if roll > 180.0 { roll -= 360.0 }
+        if roll < -180.0 { roll += 360.0 }
+        if roll > 8.0 {
+            euler.Z = 8.0
+            nextQ = math.EulerAngleToQuaternion(euler)
+        }
+        if roll < -8.0 {
+            euler.Z = -8.0
+            nextQ = math.EulerAngleToQuaternion(euler)
+        }
+        return nextQ as Quaternion
+    }
+
+    func ApplyAirUpright(physicsQuat Quaternion, facingAngle float, dt float, airTime float, isDriftActive bool) Quaternion {
+        if airTime > 0.1 && !isDriftActive {
+            var uprightQ = math.EulerAngleToQuaternion(Vector3{0.0, facingAngle, 0.0})
+            return math.SlerpQuaternion(physicsQuat, uprightQ, dt * 3.0)
+        }
+        return physicsQuat as Quaternion
+    }
+
+    func NormalizeFacingAngle(angle float) float {
+        var next = angle
+        if next > 180.0 { next -= 360.0 }
+        if next < -180.0 { next += 360.0 }
+        return next as float
+    }
+}

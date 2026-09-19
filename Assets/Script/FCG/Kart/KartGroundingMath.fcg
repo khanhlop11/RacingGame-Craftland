@@ -1,0 +1,76 @@
+// KartGroundingMath.fcg — Pure scalar grounding/probe helpers
+// Platform: Client
+// Purpose: keep raycasts/state publishing in RacingMovement while extracting safe scalar formulas.
+import "Math.fcc" as math
+
+[platform_client]
+static graph KartGroundingMath {
+    func ClampHorizontalForwardLength(len float) float {
+        if len < 0.01 { len = 0.01 }
+        return len as float
+    }
+
+    func CountWheelHits(flHit bool, frHit bool, blHit bool, brHit bool) float {
+        var hitCount = 0.0
+        if flHit { hitCount += 1.0 }
+        if frHit { hitCount += 1.0 }
+        if blHit { hitCount += 1.0 }
+        if brHit { hitCount += 1.0 }
+        return hitCount as float
+    }
+
+    func CalcProbeWeight(baseWeight float, dist float, maxDist float, normalY float, softWallThreshold float, probeGroundThreshold float, softScale float) float {
+        var w = baseWeight * (1.0 - (dist / maxDist))
+        if normalY < softWallThreshold {
+            w = 0.0
+        } else if normalY < probeGroundThreshold {
+            w = w * softScale
+        }
+        return w as float
+    }
+
+    func NormalizeOrFallbackX(x float, y float, z float, fallbackX float) float {
+        var nLen = math.Sqrt(x * x + y * y + z * z)
+        if nLen > 0.0001 { return (x / nLen) as float }
+        return fallbackX as float
+    }
+
+    func NormalizeOrFallbackY(x float, y float, z float, fallbackY float) float {
+        var nLen = math.Sqrt(x * x + y * y + z * z)
+        if nLen > 0.0001 { return (y / nLen) as float }
+        return fallbackY as float
+    }
+
+    func NormalizeOrFallbackZ(x float, y float, z float, fallbackZ float) float {
+        var nLen = math.Sqrt(x * x + y * y + z * z)
+        if nLen > 0.0001 { return (z / nLen) as float }
+        return fallbackZ as float
+    }
+
+    func CalcStableGrounded(hitCount float, raycastHit bool, verticalVelocity float) bool {
+        return ((hitCount >= 2.0) || (raycastHit && math.Abs(verticalVelocity) < 0.5)) as bool
+    }
+
+    func CalcSuspensionCompression(hit bool, normalY float, minNormalY float, restLength float, hitDist float) float {
+        if !hit { return 0.0 as float }
+        if normalY < minNormalY { return 0.0 as float }
+        var comp = (restLength - hitDist) / restLength
+        if comp < 0.0 { comp = 0.0 }
+        if comp > 1.0 { comp = 1.0 }
+        return comp as float
+    }
+
+    func CalcSuspensionForce(suspAvg float, surfaceVelocity float, spring float, damping float, maxForce float) float {
+        var springF = suspAvg * spring
+        var dampF = (-surfaceVelocity) * damping
+        var suspForce = springF + dampF
+        if suspForce < 0.0 { suspForce = 0.0 }
+        if suspForce > maxForce { suspForce = maxForce }
+        return suspForce as float
+    }
+
+    func CalcCrashSpeedRetained(wallDot float) float {
+        var absDot = math.Abs(wallDot) as float
+        return (1.0 - (absDot * 0.8)) as float
+    }
+}

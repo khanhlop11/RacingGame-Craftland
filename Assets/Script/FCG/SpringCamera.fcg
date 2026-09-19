@@ -1,0 +1,115 @@
+// SpringCamera.fcg — Camera Lò Xo (Spring Lag) theo Quả Cầu
+// GẮN VÀO: Player Component
+// Platform: Client
+
+import "StdLibrary.fcc" as std
+import "Camera.fcc" as camera
+import "Math.fcc" as math
+import "Time.fcc" as time
+import "EditorGenLib.fcc" as EditorGenLib
+import "Player.fcc" as player
+
+[platform_client]
+graph SpringCamera {
+
+    // =========================================================
+    // THÔNG SỐ CAMERA LÒ XO
+    // =========================================================
+    CamOffsetY      float = 2.5    // Cao bao nhiêu so với xe (m)
+    CamOffsetDist   float = 4.5    // Cách phía sau xe bao nhiêu (m)
+    SpringFactor    float = 0.10   // Hệ số lò xo (nhỏ=lag nhiều, lớn=bám sát)
+
+    // =========================================================
+    // BIẾN NỘI BỘ
+    // =========================================================
+    CamPosX         float = 0.0
+    CamPosY         float = 5.0
+    CamPosZ         float = 0.0
+    LastTimestamp   int   = 0
+    IsRunning       bool  = false
+    NeedWaitPlayer  bool  = true
+
+    event OnUpdate() {
+        return // Đã vô hiệu hóa tạm thời theo yêu cầu
+
+        // 1. CHỜ LOCAL PLAYER KHỞI TẠO BẰNG VÒNG LẶP UPDATE (ĐẢM BẢO CHẠY SERVER/CLIENT OK)
+        if NeedWaitPlayer {
+            var local = std.GetLocalPlayer()
+            if local != nil {
+                var p = thisEntity as entity<Player>
+                if p == local {
+                    NeedWaitPlayer = false
+                    start InitSpringCam() // Tự động lấy lần đầu
+                } else {
+                    NeedWaitPlayer = false // Xóa cờ chờ nếu script này nằm trên người chơi khác
+                    return
+                }
+            }
+            return
+        }
+
+        // 2. CHỜ INIT CHẠY XONG
+        if !IsRunning { return }
+
+        // 3. LOGIC LERPCAM CỐT LÕI
+        var sphere = EditorGenLib.EResSceneMainScene.Sphere as entity<Entity>
+        if sphere == nil { return }
+
+        // Tính Delta Time
+        var now = time.GetLocalTimestamp()
+        var dtMs = now - LastTimestamp
+        LastTimestamp = now
+        var dt = 0.033
+        if dtMs > 0 && dtMs < 200 { dt = dtMs / 1000.0 }
+
+        // Vị trí và góc của Sphere
+        var sPos = sphere<Transform>.Position
+        var sRot = sphere<Transform>.Rotation
+        var faceAngleDeg = sRot.Y
+        var faceAngleRad = faceAngleDeg * 3.14159 / 180.0
+
+        // Tính vị trí lý tưởng Camera: phía sau xe theo hướng xe đang nhìn
+        var backX = -math.Sin(faceAngleRad) * CamOffsetDist
+        var backZ = -math.Cos(faceAngleRad) * CamOffsetDist
+
+        var targetX = sPos.X + backX
+        var targetY = sPos.Y + CamOffsetY
+        var targetZ = sPos.Z + backZ
+
+        // Lerp mượt
+        var lerpFactor = SpringFactor * dt * 60.0
+        if lerpFactor > 1.0 { lerpFactor = 1.0 }
+
+        CamPosX = CamPosX + (targetX - CamPosX) * lerpFactor
+        CamPosY = CamPosY + (targetY - CamPosY) * lerpFactor
+        CamPosZ = CamPosZ + (targetZ - CamPosZ) * lerpFactor
+
+        // Thay đổi vị trí của FakeCamera thay vì Player
+        var fakeCam = EditorGenLib.EResSceneMainScene.KhoiCamere as entity<Entity>
+        if fakeCam != nil {
+            fakeCam<Transform>.Position = Vector3{CamPosX, CamPosY, CamPosZ}
+        }
+    }
+
+    async func InitSpringCam() {
+        LogInfo("[SpringCam] Đang chờ Camera khởi tạo...")
+        
+        var waitCount = 0
+        while waitCount < 50 {
+            std.WaitForNextFrame()
+            waitCount += 1
+        }
+
+        var sphere = EditorGenLib.EResSceneMainScene.Sphere as entity<Entity>
+        if sphere != nil {
+            var sPos = sphere<Transform>.Position
+            CamPosX = sPos.X
+            CamPosY = sPos.Y + CamOffsetY
+            CamPosZ = sPos.Z - CamOffsetDist
+        }
+
+        LastTimestamp = time.GetLocalTimestamp()
+        IsRunning = true
+        LogInfo("[SpringCam] Chạy Loop Lò xo!")
+    }
+}

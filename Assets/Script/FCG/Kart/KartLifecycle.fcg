@@ -1,0 +1,40 @@
+// KartLifecycle.fcg — Spawn/reset Rigidbody helpers
+// Platform: Client
+// Purpose: keep RacingMovement owning state while extracting safe Transform/Rigidbody operations.
+import "StdLibrary.fcc" as std
+import "Physics.fcc" as physics
+
+[platform_client]
+static graph KartLifecycle {
+    func ConfigureSpawnKart(kartModel entity<Entity>, raceStartPosition Vector3, yaw float) {
+        if kartModel == nil { return }
+        physics.Sleep(kartModel as entity<Rigidbody>)
+        std.SetActive(kartModel as entity, true)
+        kartModel<Transform>.Position = raceStartPosition
+        kartModel<Transform>.Rotation = Vector3{0.0, yaw, 0.0}
+        kartModel<Rigidbody>.UseGravity = true
+        // Khóa xoay vật lý để không bị lật khi rơi, cho phép rơi tự do theo trục Y (Constrain = FreezeRotation)
+        kartModel<Rigidbody>.Constrain = 112 as RigidbodyConstrainType
+        kartModel<Rigidbody>.Velocity = Vector3{0.0, 0.0, 0.0}
+        kartModel<Rigidbody>.AngularVelocity = Vector3{0.0, 0.0, 0.0}
+        physics.Wakeup(kartModel as entity<Rigidbody>)
+    }
+
+    func ConfigureResetKart(kartModel entity<Entity>, resetPosition Vector3, yaw float) {
+        if kartModel == nil { return }
+        physics.Sleep(kartModel as entity<Rigidbody>)
+        kartModel<Transform>.Position = resetPosition
+        kartModel<Transform>.Rotation = Vector3{0.0, yaw, 0.0}
+        kartModel<Rigidbody>.Velocity = Vector3{0.0, 0.0, 0.0}
+        kartModel<Rigidbody>.AngularVelocity = Vector3{0.0, 0.0, 0.0}
+        kartModel<Rigidbody>.Constrain = 126 as RigidbodyConstrainType
+    }
+
+    func WakeAndZeroKart(kartModel entity<Entity>) {
+        if kartModel == nil { return }
+        physics.Wakeup(kartModel as entity<Rigidbody>)
+        kartModel<Rigidbody>.Velocity = Vector3{0.0, 0.0, 0.0}
+        kartModel<Rigidbody>.AngularVelocity = Vector3{0.0, 0.0, 0.0}
+    }
+}
+

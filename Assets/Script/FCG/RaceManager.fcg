@@ -1,0 +1,1008 @@
+// RaceManager.fcg
+// Vai trò: Trọng tài bản đồ (Map Referee) + Checkpoint/Lap Tracking (Dạng List tọa độ)
+// Gắn vào: Module > Global (hoặc bất kỳ entity bản đồ nào)
+// Platform: Server
+
+import "StdLibrary.fcc" as std
+import "EditorGenLib.fcc" as EditorGenLib
+import "List.fcc" as list
+import "Math.fcc" as math
+import "Convert.fcc" as convert
+import "Strings.fcc" as strings
+import "./RacingMovementServer.fcg" as rms
+import "./KartRank.fcg" as kartRank
+
+[platform_server]
+graph RaceManager {
+    RaceState       int   = 0 
+    LobbyDurationConfig float = 30.0 // CẤU HÌNH THỜI GIAN PHÒNG CHỜ (Mặc định 30s để tiện test và tùy chỉnh)
+    GlobalLobbyTimer float = 20.0 // Đếm ngược phòng chờ đồng bộ toàn server
+    CountdownTimer  float = 5.0   // 2.0s chờ camera chuyển góc + 3.0s đếm ngược 3-2-1
+    HasSentCountdown bool = false
+    LastLoggedSec   int   = -1 // Biến ghi nhớ giây cuối cùng đã in ra Log
+    LastBroadcastSec int  = -1 // Biến ghi nhớ giây đã broadcast xuống client
+    LastCountdownBroadcastSec int = -1 // Biến ghi nhớ giây 3-2-1 đã broadcast xuống client
+
+    IsInited        bool = false
+
+    // =========================================================
+    // CHECKPOINT / LAP CONFIG
+    // =========================================================
+    TotalLaps           int   = 1     // Số vòng đua (Đặt = 0 để test: cán qua vạch xuất phát/CP đầu tiên là về đích và dừng xe ngay)
+    TotalCheckpoints    int   = 0     // Auto đổi theo marker CP_; không dùng tọa độ hardcode cũ
+    CheckpointRadius    float = 12.0  // Bán kính detect checkpoint (world units)
+    MaxScannedCheckpoints int = 64    // Giới hạn marker CP_00..CP_63
+    ScannedCheckpointMaxIndex int = -1
+    TotalWaypoints      int   = 0     // Auto đổi theo marker WP_; dùng cho wrong-way/racing line
+    MaxScannedWaypoints int = 256    // Giới hạn marker WP_00..WP_255
+    ScannedWaypointMaxIndex int = -1
+
+    // Khai báo danh sách chứa toạ độ Checkpoint
+    CheckpointX         List<float> = nil
+    CheckpointY         List<float> = nil
+    CheckpointZ         List<float> = nil
+    WaypointX           List<float> = nil
+    WaypointY           List<float> = nil
+    WaypointZ           List<float> = nil
+
+    // =========================================================
+    // PER-PLAYER STATE (dùng parallel lists — index = player slot)
+    // =========================================================
+    MaxPlayers          int = 8
+    PlayerEntities      List<entity<Player>> = nil
+    PlayerNextCP        List<int> = nil
+    PlayerLap           List<int> = nil
+    PlayerFinished      List<int> = nil
+    PlayerFinishOrder   List<int> = nil
+    PlayerRespawnX      List<float> = nil
+    PlayerRespawnY      List<float> = nil
+    PlayerRespawnZ      List<float> = nil
+    PlayerRespawnYaw    List<float> = nil
+
+    // Danh sách vị trí xuất phát từng ô (Start_00..Start_07 hoặc Slot_00..Slot_07)
+    StartSlotX          List<float> = nil
+    StartSlotY          List<float> = nil
+    StartSlotZ          List<float> = nil
+    StartSlotYaw        List<float> = nil
+    HasStartSlot        List<bool> = nil
+    TotalStartSlots     int = 0
+
+    // Intro Camera Data (quét từ IntroCameraRoot dưới PointRoot / Main Scene)
+    TotalIntroShots     int = 0
+    MaxScannedIntroShots int = 8
+    IntroP_StartX       List<float> = nil
+    IntroP_StartY       List<float> = nil
+    IntroP_StartZ       List<float> = nil
+    IntroP_EndX         List<float> = nil
+    IntroP_EndY         List<float> = nil
+    IntroP_EndZ         List<float> = nil
+    IntroR_StartYaw     List<float> = nil
+    IntroR_EndYaw       List<float> = nil
+
+    FinishCount         int   = 0            // Số người đã về đích
+    RaceTimer           float = 0.0          // Thời gian đua (giây)
+    RealtimeRankTimer   float = 0.0          // Timer đồng bộ xếp hạng real-time theo Waypoint
+
+    // =========================================================
+    // EVENT PROTOCOL (tái sử dụng onRaceCommand đã đăng ký)
+    // =========================================================
+    event onRaceCommand(cmdType int) {}
+
+    event OnAwake() {
+        IsInited = true
+        GlobalLobbyTimer = LobbyDurationConfig
+        InitCheckpoints()
+        InitWaypoints()
+        InitStartSlots()
+        InitIntroCameras()
+        InitPlayerArrays()
+        // LogInfo("[RaceManager] Đã khởi tạo Server. Bắt đầu đếm ngược tải Map...")
+    }
+
+    // KHỞI TẠO TỌA ĐỘ CHECKPOINT
+    // Ưu tiên quét marker con tên CP_00, CP_01, CP_02... dưới entity gắn RaceManager.
+    // Nếu không quét đủ ít nhất CP_00 + CP_01 thì báo lỗi và không dùng tọa độ cũ.
+    func InitCheckpoints() {
+        CheckpointX = list.New(MaxScannedCheckpoints, MaxScannedCheckpoints) as List<float>
+        CheckpointY = list.New(MaxScannedCheckpoints, MaxScannedCheckpoints) as List<float>
+        CheckpointZ = list.New(MaxScannedCheckpoints, MaxScannedCheckpoints) as List<float>
+        ScannedCheckpointMaxIndex = -1
+        ScanCheckpointMarkers(thisEntity as entity<Entity>)
+
+        if ScannedCheckpointMaxIndex >= 1 {
+            TotalCheckpoints = ScannedCheckpointMaxIndex + 1
+            // LogInfo("[RaceManager] Auto scan checkpoint marker: " + convert.ToString(TotalCheckpoints) + " checkpoints")
+            return
+        }
+
+        TotalCheckpoints = 0
+        LogError("[RaceManager] Không quét đủ CP marker. Hãy gắn RaceManager vào CheckpointRoot và tạo CP_00, CP_01...")
+    }
+
+    func ScanCheckpointMarkers(node entity<Entity>) {
+        if node == nil { return }
+
+        var nodeName = node<Entity>.Name
+        if strings.Find(nodeName, "CP_", 0) == 0 {
+            var nameParts = strings.Split(nodeName, "_")
+            var partsCount = list.Length(nameParts as List<object>)
+            if partsCount >= 2 {
+                var idxStr = nameParts[1] as string
+                convert.StringToFloat(idxStr, out var parsedIdx, out var parseOk)
+                if parseOk {
+                    var cpIndex = math.Floor(parsedIdx + 0.5) as int
+                    if cpIndex >= 0 && cpIndex < MaxScannedCheckpoints {
+                        var p = node<Transform>.Position
+                        CheckpointX[cpIndex] = p.X
+                        CheckpointY[cpIndex] = p.Y
+                        CheckpointZ[cpIndex] = p.Z
+                        if cpIndex > ScannedCheckpointMaxIndex { ScannedCheckpointMaxIndex = cpIndex }
+                        // LogInfo("[RaceManager] Found " + nodeName + " at index " + convert.ToString(cpIndex))
+                    }
+                }
+            }
+        }
+
+        var children = std.GetChildren(node)
+        var count = list.Length(children as List<object>)
+        for i = 0, count, 1 {
+            var child = children[i] as entity<Entity>
+            if child != nil { ScanCheckpointMarkers(child) }
+        }
+    }
+
+    func InitWaypoints() {
+        WaypointX = list.New(MaxScannedWaypoints, MaxScannedWaypoints) as List<float>
+        WaypointY = list.New(MaxScannedWaypoints, MaxScannedWaypoints) as List<float>
+        WaypointZ = list.New(MaxScannedWaypoints, MaxScannedWaypoints) as List<float>
+        ScannedWaypointMaxIndex = -1
+        var scanRoot = thisEntity as entity<Entity>
+        var parentRoot = std.GetParent(scanRoot)
+        if parentRoot != nil {
+            scanRoot = parentRoot
+        }
+        // LogInfo("[RaceManager] Scan WP from direct parent: " + scanRoot<Entity>.Name)
+        ScanWaypointMarkers(scanRoot)
+
+        if ScannedWaypointMaxIndex >= 1 {
+            TotalWaypoints = ScannedWaypointMaxIndex + 1
+            // LogInfo("[RaceManager] Auto scan waypoint marker: " + convert.ToString(TotalWaypoints) + " waypoints")
+            return
+        }
+
+        TotalWaypoints = 0
+        LogError("[RaceManager] Không quét đủ WP marker. Wrong-way sẽ không hoạt động.")
+    }
+
+    func ScanWaypointMarkers(node entity<Entity>) {
+        if node == nil { return }
+
+        var nodeName = node<Entity>.Name
+        if strings.Find(nodeName, "WP_", 0) == 0 {
+            var nameParts = strings.Split(nodeName, "_")
+            var partsCount = list.Length(nameParts as List<object>)
+            if partsCount >= 2 {
+                var idxStr = nameParts[1] as string
+                convert.StringToFloat(idxStr, out var parsedIdx, out var parseOk)
+                if parseOk {
+                    var wpIndex = math.Floor(parsedIdx + 0.5) as int
+                    if wpIndex >= 0 && wpIndex < MaxScannedWaypoints {
+                        var p = node<Transform>.Position
+                        WaypointX[wpIndex] = p.X
+                        WaypointY[wpIndex] = p.Y
+                        WaypointZ[wpIndex] = p.Z
+                        if wpIndex > ScannedWaypointMaxIndex { ScannedWaypointMaxIndex = wpIndex }
+                        // LogInfo("[RaceManager] Found " + nodeName + " at index " + convert.ToString(wpIndex))
+                    }
+                }
+            }
+        }
+
+        var children = std.GetChildren(node)
+        var count = list.Length(children as List<object>)
+        for i = 0, count, 1 {
+            var child = children[i] as entity<Entity>
+            if child != nil { ScanWaypointMarkers(child) }
+        }
+    }
+
+    func InitStartSlots() {
+        StartSlotX = list.New(MaxPlayers, MaxPlayers) as List<float>
+        StartSlotY = list.New(MaxPlayers, MaxPlayers) as List<float>
+        StartSlotZ = list.New(MaxPlayers, MaxPlayers) as List<float>
+        StartSlotYaw = list.New(MaxPlayers, MaxPlayers) as List<float>
+        HasStartSlot = list.New(MaxPlayers, MaxPlayers) as List<bool>
+        TotalStartSlots = 0
+
+        for i = 0, MaxPlayers, 1 {
+            StartSlotX[i] = 0.0
+            StartSlotY[i] = 0.0
+            StartSlotZ[i] = 0.0
+            StartSlotYaw[i] = 0.0
+            HasStartSlot[i] = false
+        }
+
+        // Tìm root cao nhất của scene để quét được mọi nhóm (PointRoot, Start_Root...)
+        var sceneRoot = thisEntity as entity<Entity>
+        for step = 0, 20, 1 {
+            var p = std.GetParent(sceneRoot)
+            if p == nil { break }
+            sceneRoot = p
+        }
+        ScanStartSlotMarkers(sceneRoot)
+
+        if TotalStartSlots == 0 {
+            ScanStartSlotMarkers(thisEntity as entity<Entity>)
+            var pr = std.GetParent(thisEntity as entity<Entity>)
+            if pr != nil { ScanStartSlotMarkers(pr) }
+        }
+    }
+
+    func ScanStartSlotMarkers(node entity<Entity>) {
+        if node == nil { return }
+
+        var nodeName = node<Entity>.Name
+        var isSlotMarker = false
+        var idxStr = ""
+
+        if strings.Find(nodeName, "Start_", 0) == 0 {
+            var nameParts = strings.Split(nodeName, "_")
+            if list.Length(nameParts as List<object>) >= 2 {
+                idxStr = nameParts[1] as string
+                isSlotMarker = true
+            }
+        } else if strings.Find(nodeName, "Slot_", 0) == 0 {
+            var nameParts = strings.Split(nodeName, "_")
+            if list.Length(nameParts as List<object>) >= 2 {
+                idxStr = nameParts[1] as string
+                isSlotMarker = true
+            }
+        } else if strings.Find(nodeName, "StartSlot_", 0) == 0 {
+            var nameParts = strings.Split(nodeName, "_")
+            if list.Length(nameParts as List<object>) >= 2 {
+                idxStr = nameParts[1] as string
+                isSlotMarker = true
+            }
+        } else if strings.Find(nodeName, "Point_", 0) == 0 {
+            var nameParts = strings.Split(nodeName, "_")
+            if list.Length(nameParts as List<object>) >= 2 {
+                idxStr = nameParts[1] as string
+                isSlotMarker = true
+            }
+        } else {
+            // Hỗ trợ node con nằm trực tiếp trong Start_Root hoặc PointRoot (ví dụ tên 0, 1, 2... hoặc 00, 01...)
+            var pNode = std.GetParent(node)
+            if pNode != nil {
+                var pName = pNode<Entity>.Name
+                if strings.Find(pName, "Start", 0) >= 0 || strings.Find(pName, "Point", 0) >= 0 {
+                    convert.StringToFloat(nodeName, out var numIdx, out var numOk)
+                    if numOk {
+                        idxStr = nodeName
+                        isSlotMarker = true
+                    }
+                }
+            }
+        }
+
+        if isSlotMarker && idxStr != "" {
+            convert.StringToFloat(idxStr, out var parsedIdx, out var parseOk)
+            if parseOk {
+                var slotIndex = math.Floor(parsedIdx + 0.5) as int
+                if slotIndex >= 0 && slotIndex < MaxPlayers {
+                    var p = node<Transform>.Position
+                    StartSlotX[slotIndex] = p.X
+                    StartSlotY[slotIndex] = p.Y
+                    StartSlotZ[slotIndex] = p.Z
+                    
+                    var calculatedYaw = 0.0
+                    if TotalWaypoints >= 2 {
+                        calculatedYaw = CalcYawByWaypointAt(p.X, p.Z)
+                    } else if TotalCheckpoints >= 2 {
+                        calculatedYaw = CalcYawBetweenCPs(0, 1)
+                    }
+                    StartSlotYaw[slotIndex] = calculatedYaw
+                    
+                    if !HasStartSlot[slotIndex] {
+                        TotalStartSlots += 1
+                    }
+                    HasStartSlot[slotIndex] = true
+                }
+            }
+        }
+
+        var children = std.GetChildren(node)
+        var count = list.Length(children as List<object>)
+        for i = 0, count, 1 {
+            var child = children[i] as entity<Entity>
+            if child != nil { ScanStartSlotMarkers(child) }
+        }
+    }
+
+    func InitPlayerArrays() {
+        PlayerEntities  = list.New(MaxPlayers, MaxPlayers) as List<entity<Player>>
+        PlayerNextCP    = list.New(MaxPlayers, MaxPlayers) as List<int>
+        PlayerLap       = list.New(MaxPlayers, MaxPlayers) as List<int>
+        PlayerFinished  = list.New(MaxPlayers, MaxPlayers) as List<int>
+        PlayerFinishOrder = list.New(MaxPlayers, MaxPlayers) as List<int>
+        PlayerRespawnX  = list.New(MaxPlayers, MaxPlayers) as List<float>
+        PlayerRespawnY  = list.New(MaxPlayers, MaxPlayers) as List<float>
+        PlayerRespawnZ  = list.New(MaxPlayers, MaxPlayers) as List<float>
+        PlayerRespawnYaw = list.New(MaxPlayers, MaxPlayers) as List<float>
+
+        // Tự động shift nếu user đánh số 1-based (Start_1..Start_6 thay vì Start_0..Start_5)
+        if TotalStartSlots > 0 && !HasStartSlot[0] && HasStartSlot[1] {
+            for s = 0, MaxPlayers - 1, 1 {
+                if HasStartSlot[s + 1] {
+                    StartSlotX[s] = StartSlotX[s + 1]
+                    StartSlotY[s] = StartSlotY[s + 1]
+                    StartSlotZ[s] = StartSlotZ[s + 1]
+                    StartSlotYaw[s] = StartSlotYaw[s + 1]
+                    HasStartSlot[s] = true
+                    HasStartSlot[s + 1] = false
+                }
+            }
+        }
+
+        var initYaw = 0.0
+        if TotalWaypoints >= 2 { initYaw = CalcStartYawByWaypoints() } else if TotalCheckpoints >= 2 { initYaw = CalcYawBetweenCPs(0, 1) }
+        for i = 0, MaxPlayers, 1 {
+            PlayerEntities[i] = nil
+            PlayerNextCP[i] = 0
+            if TotalCheckpoints >= 2 { PlayerNextCP[i] = 1 }
+            PlayerLap[i] = 1
+            PlayerFinished[i] = 0
+            PlayerFinishOrder[i] = 0
+            
+            if HasStartSlot != nil && HasStartSlot[i] {
+                PlayerRespawnX[i] = StartSlotX[i]
+                PlayerRespawnY[i] = StartSlotY[i]
+                PlayerRespawnZ[i] = StartSlotZ[i]
+                if math.Abs(StartSlotYaw[i]) > 0.001 {
+                    PlayerRespawnYaw[i] = StartSlotYaw[i]
+                } else {
+                    PlayerRespawnYaw[i] = initYaw
+                }
+            } else {
+                // Fallback nếu chưa đặt slot này: tự động xếp so le sau CP_00
+                if TotalCheckpoints >= 1 {
+                    var row = (i / 2) as float
+                    var col = -1.0
+                    if (i - ((i / 2) * 2)) != 0 {
+                        col = 1.0
+                    }
+                    var fwdX = math.Sin(initYaw)
+                    var fwdZ = math.Cos(initYaw)
+                    var rgtX = math.Cos(initYaw)
+                    var rgtZ = -math.Sin(initYaw)
+                    var backDist = row * 6.0 + 3.0
+                    var sideDist = col * 2.5
+                    PlayerRespawnX[i] = CheckpointX[0] - fwdX * backDist + rgtX * sideDist
+                    PlayerRespawnY[i] = CheckpointY[0]
+                    PlayerRespawnZ[i] = CheckpointZ[0] - fwdZ * backDist + rgtZ * sideDist
+                } else {
+                    PlayerRespawnX[i] = 0.0
+                    PlayerRespawnY[i] = 0.0
+                    PlayerRespawnZ[i] = 0.0
+                }
+                PlayerRespawnYaw[i] = initYaw
+            }
+        }
+    }
+
+    func SyncCoordinate(p entity<Player>, cpIndex int, coordType int, val float) {
+        var sign = 1
+        var fVal = val
+        if val < 0.0 {
+            sign = -1
+            fVal = -val
+        }
+        var intVal = math.Floor(fVal * 10.0 + 0.5) as int
+        if intVal > 99999 { intVal = 99999 } 
+        
+        var encoded = 1000000000 + cpIndex * 1000000 + coordType * 100000 + intVal
+        encoded = encoded * sign
+        
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{encoded})
+    }
+
+    func SyncWaypointCoordinate(p entity<Player>, wpIndex int, coordType int, val float) {
+        var sign = 1
+        var fVal = val
+        if val < 0.0 {
+            sign = -1
+            fVal = -val
+        }
+        var intVal = math.Floor(fVal * 10.0 + 0.5) as int
+        if intVal > 99999 { intVal = 99999 }
+        var encoded = 1500000000 + wpIndex * 1000000 + coordType * 100000 + intVal
+        encoded = encoded * sign
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{encoded})
+    }
+
+    func SyncAllWaypointsToPlayer(p entity<Player>) {
+        // LogInfo("[RaceManager] Sync WP to " + p<Entity>.Name + " total=" + convert.ToString(TotalWaypoints))
+        for i = 0, TotalWaypoints, 1 {
+            SyncWaypointCoordinate(p, i, 0, WaypointX[i])
+            SyncWaypointCoordinate(p, i, 1, WaypointY[i])
+            SyncWaypointCoordinate(p, i, 2, WaypointZ[i])
+        }
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{1000 + TotalWaypoints})
+    }
+    func SyncAllCheckpointsToPlayer(p entity<Player>) {
+        for i = 0, TotalCheckpoints, 1 {
+            SyncCoordinate(p, i, 0, CheckpointX[i])
+            SyncCoordinate(p, i, 1, CheckpointY[i])
+            SyncCoordinate(p, i, 2, CheckpointZ[i])
+        }
+        // Gửi tổng số checkpoint cho client
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{500 + TotalCheckpoints})
+    }
+
+    func SyncIntroCoordinate(p entity<Player>, shotIndex int, coordType int, val float) {
+        var sign = 1
+        var fVal = val
+        if val < 0.0 {
+            sign = -1
+            fVal = -val
+        }
+        var intVal = math.Floor(fVal * 10.0 + 0.5) as int
+        if intVal > 99999 { intVal = 99999 }
+        var encoded = 2000000000 + shotIndex * 1000000 + coordType * 100000 + intVal
+        encoded = encoded * sign
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{encoded})
+    }
+
+    func SyncAllIntroCamerasToPlayer(p entity<Player>) {
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{7000 + TotalIntroShots})
+        if TotalIntroShots <= 0 { return }
+        for i = 0, TotalIntroShots, 1 {
+            SyncIntroCoordinate(p, i, 0, IntroP_StartX[i])
+            SyncIntroCoordinate(p, i, 1, IntroP_StartY[i])
+            SyncIntroCoordinate(p, i, 2, IntroP_StartZ[i])
+            SyncIntroCoordinate(p, i, 3, IntroP_EndX[i])
+            SyncIntroCoordinate(p, i, 4, IntroP_EndY[i])
+            SyncIntroCoordinate(p, i, 5, IntroP_EndZ[i])
+            SyncIntroCoordinate(p, i, 6, IntroR_StartYaw[i])
+            SyncIntroCoordinate(p, i, 7, IntroR_EndYaw[i])
+        }
+    }
+
+    func InitIntroCameras() {
+        IntroP_StartX = list.New(MaxScannedIntroShots, MaxScannedIntroShots) as List<float>
+        IntroP_StartY = list.New(MaxScannedIntroShots, MaxScannedIntroShots) as List<float>
+        IntroP_StartZ = list.New(MaxScannedIntroShots, MaxScannedIntroShots) as List<float>
+        IntroP_EndX   = list.New(MaxScannedIntroShots, MaxScannedIntroShots) as List<float>
+        IntroP_EndY   = list.New(MaxScannedIntroShots, MaxScannedIntroShots) as List<float>
+        IntroP_EndZ   = list.New(MaxScannedIntroShots, MaxScannedIntroShots) as List<float>
+        IntroR_StartYaw = list.New(MaxScannedIntroShots, MaxScannedIntroShots) as List<float>
+        IntroR_EndYaw   = list.New(MaxScannedIntroShots, MaxScannedIntroShots) as List<float>
+
+        var rawStartP = list.New(9, 9) as List<Vector3>
+        var rawEndP   = list.New(9, 9) as List<Vector3>
+        var rawStartR = list.New(9, 9) as List<Vector3>
+        var rawEndR   = list.New(9, 9) as List<Vector3>
+        var hasStart  = list.New(9, 9) as List<bool>
+        var hasEnd    = list.New(9, 9) as List<bool>
+        for initI = 0, 9, 1 {
+            rawStartP[initI] = Vector3{0.0, 0.0, 0.0}
+            rawEndP[initI]   = Vector3{0.0, 0.0, 0.0}
+            rawStartR[initI] = Vector3{0.0, 0.0, 0.0}
+            rawEndR[initI]   = Vector3{0.0, 0.0, 0.0}
+            hasStart[initI]  = false
+            hasEnd[initI]    = false
+        }
+
+        // 1. Quét trực tiếp từ thisEntity (PointRoot) giống hệt CheckpointRoot / WaypointRoot
+        ScanIntroMarkersRecursiveServer(thisEntity as entity<Entity>, rawStartP, rawEndP, rawStartR, rawEndR, hasStart, hasEnd)
+
+        // 2. Dự phòng: nếu IntroCameraRoot được đặt ngoài PointRoot, quét thêm parent của PointRoot
+        var foundAny = false
+        for chkI = 0, 9, 1 {
+            if hasStart[chkI] || hasEnd[chkI] { foundAny = true }
+        }
+        if !foundAny {
+            var pRoot = std.GetParent(thisEntity as entity<Entity>)
+            if pRoot != nil {
+                ScanIntroMarkersRecursiveServer(pRoot, rawStartP, rawEndP, rawStartR, rawEndR, hasStart, hasEnd)
+            }
+        }
+
+        var validShots = 0
+        for s = 1, 9, 1 {
+            if hasStart[s] && hasEnd[s] {
+                IntroP_StartX[validShots] = rawStartP[s].X
+                IntroP_StartY[validShots] = rawStartP[s].Y
+                IntroP_StartZ[validShots] = rawStartP[s].Z
+                IntroP_EndX[validShots]   = rawEndP[s].X
+                IntroP_EndY[validShots]   = rawEndP[s].Y
+                IntroP_EndZ[validShots]   = rawEndP[s].Z
+                IntroR_StartYaw[validShots] = rawStartR[s].Y
+                IntroR_EndYaw[validShots]   = rawEndR[s].Y
+                validShots += 1
+            }
+        }
+        if hasStart[0] && hasEnd[0] {
+            IntroP_StartX[validShots] = rawStartP[0].X
+            IntroP_StartY[validShots] = rawStartP[0].Y
+            IntroP_StartZ[validShots] = rawStartP[0].Z
+            IntroP_EndX[validShots]   = rawEndP[0].X
+            IntroP_EndY[validShots]   = rawEndP[0].Y
+            IntroP_EndZ[validShots]   = rawEndP[0].Z
+            IntroR_StartYaw[validShots] = rawStartR[0].Y
+            IntroR_EndYaw[validShots]   = rawEndR[0].Y
+            validShots += 1
+        }
+
+        TotalIntroShots = validShots
+        if TotalIntroShots > 0 {
+            // LogInfo("[RaceManager_IntroCam] Quét thành công " + convert.ToString(TotalIntroShots) + " góc IntroCameraRoot từ Scene:")
+        }
+    }
+
+    func ScanIntroMarkersRecursiveServer(node entity<Entity>,
+        startP List<Vector3>, endP List<Vector3>,
+        startR List<Vector3>, endR List<Vector3>,
+        hasS List<bool>, hasE List<bool>) {
+        if node == nil { return }
+        var nodeName = node<Entity>.Name
+        // LogInfo("[RaceManager_ScanTree] Node = '" + nodeName + "'")
+        
+        if strings.Find(nodeName, "Intro", 0) >= 0 || strings.Find(nodeName, "Cam", 0) >= 0 {
+            var isStart = strings.Find(nodeName, "Start", 0) >= 0
+            var isEnd   = strings.Find(nodeName, "End", 0) >= 0
+            if isStart || isEnd {
+                for s = 0, 9, 1 {
+                    var sStr = convert.ToString(s)
+                    if strings.Find(nodeName, sStr, 0) >= 0 {
+                        var p = node<Transform>.Position
+                        var r = node<Transform>.Rotation
+                        if isStart {
+                            startP[s] = p
+                            startR[s] = r
+                            hasS[s] = true
+                            // LogInfo("[RaceManager_IntroCam] >>> MATCH START")
+                        } else if isEnd {
+                            endP[s] = p
+                            endR[s] = r
+                            hasE[s] = true
+                            // LogInfo("[RaceManager_IntroCam] >>> MATCH END")
+                        }
+                        break
+                    }
+                }
+            }
+        }
+
+        var children = std.GetChildren(node)
+        var count = list.Length(children as List<object>)
+        for i = 0, count, 1 {
+            var child = children[i] as entity<Entity>
+            if child != nil {
+                ScanIntroMarkersRecursiveServer(child, startP, endP, startR, endR, hasS, hasE)
+            }
+        }
+    }
+
+    // Tìm slot index cho player, hoặc gán slot mới
+    func GetPlayerSlot(p entity<Player>) int {
+        for i = 0, MaxPlayers, 1 {
+            if PlayerEntities[i] == p {
+                if RaceState == 0 {
+                    if TotalIntroShots == 0 {
+                        InitIntroCameras()
+                    }
+                    SyncAllIntroCamerasToPlayer(p)
+                }
+                return i
+            }
+        }
+        for i = 0, MaxPlayers, 1 {
+            if PlayerEntities[i] == nil {
+                PlayerEntities[i] = p
+                if TotalIntroShots == 0 {
+                    InitIntroCameras()
+                }
+                SyncAllCheckpointsToPlayer(p)
+                SyncAllWaypointsToPlayer(p)
+                SyncAllIntroCamerasToPlayer(p)
+                SendCheckpointUpdate(p, i)
+                if RaceState == 0 {
+                    var curSec = math.Floor(GlobalLobbyTimer) as int
+                    std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{6000 + curSec})
+                }
+                return i
+            }
+        }
+        return -1
+    }
+
+    // Tính khoảng cách XZ (bỏ qua Y) giữa 2 điểm
+    func DistXZ(ax float, az float, bx float, bz float) float {
+        var dx = ax - bx
+        var dz = az - bz
+        return math.Sqrt(dx * dx + dz * dz)
+    }
+
+    // Tính góc Yaw (độ) từ checkpoint A hướng tới checkpoint B
+    func NormalizeYaw(yaw float) float {
+        while yaw > 180.0 { yaw -= 360.0 }
+        while yaw < -180.0 { yaw += 360.0 }
+        return yaw
+    }
+
+    func CalcYawBetweenCPs(fromCP int, toCP int) float {
+        var dx = CheckpointX[toCP] - CheckpointX[fromCP]
+        var dz = CheckpointZ[toCP] - CheckpointZ[fromCP]
+        var yawDeg = math.ATan2(dx, dz)
+        return NormalizeYaw(yawDeg)
+    }
+
+    func CalcYawByWaypointAt(posX float, posZ float) float {
+        if TotalWaypoints < 2 { return 0.0 }
+        var bestDistSq = 999999999.0
+        var nearestWp = 0
+
+        for i = 0, TotalWaypoints, 1 {
+            var dx = WaypointX[i] - posX
+            var dz = WaypointZ[i] - posZ
+            var dSq = dx * dx + dz * dz
+            if dSq < bestDistSq {
+                bestDistSq = dSq
+                nearestWp = i
+            }
+        }
+
+        var nextWp = nearestWp + 1
+        if nextWp >= TotalWaypoints { nextWp = 0 }
+        var yawDx = WaypointX[nextWp] - WaypointX[nearestWp]
+        var yawDz = WaypointZ[nextWp] - WaypointZ[nearestWp]
+        var resultYaw = NormalizeYaw(math.ATan2(yawDx, yawDz))
+        return resultYaw
+    }
+
+    func CalcStartYawByWaypoints() float {
+        return CalcYawByWaypointAt(CheckpointX[0], CheckpointZ[0])
+    }
+
+    // Tính progress score cho ranking dựa trên Checkpoint + khoảng cách tới CP tiếp theo:
+    // Score = (lap * 1,000,000) + (effectiveCP * 10,000) + (10,000 - distToNextCP)
+    func GetProgressScore(slot int) float {
+        var p = PlayerEntities[slot] as entity<Player>
+        if p == nil { return -1.0 }
+
+        var finished = PlayerFinished[slot] as int
+        if finished == 1 {
+            var order = PlayerFinishOrder[slot] as int
+            return 100000000.0 - (order as float) * 1000.0
+        }
+
+        var lap = PlayerLap[slot] as int
+        var baseScore = (lap as float) * 1000000.0
+
+        if TotalCheckpoints < 2 || CheckpointX == nil {
+            var nextCPFallback = PlayerNextCP[slot] as int
+            return baseScore + (nextCPFallback as float) * 1000.0
+        }
+
+        var nextCP = PlayerNextCP[slot] as int
+        var cpIndexForScore = nextCP
+        if nextCP == 0 {
+            cpIndexForScore = TotalCheckpoints
+        }
+
+        var playerPos = p<rms>.TargetPos
+        var targetCpX = CheckpointX[nextCP]
+        var targetCpZ = CheckpointZ[nextCP]
+        var distToTargetCP = DistXZ(playerPos.X, playerPos.Z, targetCpX, targetCpZ)
+        
+        var subScore = 10000.0 - distToTargetCP
+        if subScore < 0.0 { subScore = 0.0 }
+
+        var cpScore = (cpIndexForScore as float) * 10000.0 + subScore
+        return baseScore + cpScore
+    }
+
+    // Tính vị trí xếp hạng real-time cho player
+    func CalcPosition(targetSlot int) int {
+        // Nếu người chơi này ĐÃ CÁN ĐÍCH: giữ cố định thứ hạng lúc về đích
+        var finished = PlayerFinished[targetSlot] as int
+        if finished == 1 {
+            var order = PlayerFinishOrder[targetSlot] as int
+            if order > 0 { return order }
+        }
+
+        var myScore = GetProgressScore(targetSlot)
+        var position = 1
+
+        for i = 0, MaxPlayers, 1 {
+            if i == targetSlot { continue }
+            if PlayerEntities[i] == nil { continue }
+
+            var otherScore = GetProgressScore(i)
+            if otherScore > myScore {
+                position += 1
+            } else if otherScore == myScore {
+                if i < targetSlot {
+                    position += 1
+                }
+            }
+        }
+        return position
+    }
+
+    // Gửi thông tin checkpoint/lap xuống client bằng sequential dispatches
+    func SendCheckpointUpdate(p entity<Player>, slot int) {
+        var lap = PlayerLap[slot] as int
+        var pos = CalcPosition(slot)
+        var nextCP = PlayerNextCP[slot] as int
+
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{100 + lap})
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{200 + pos})
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{300 + nextCP})
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{400 + TotalLaps})
+
+        // Gửi respawn position + yaw trực tiếp cho Client (cpIndex=99 = respawn)
+        SyncCoordinate(p, 99, 0, PlayerRespawnX[slot] as float)
+        SyncCoordinate(p, 99, 1, PlayerRespawnY[slot] as float)
+        SyncCoordinate(p, 99, 2, PlayerRespawnZ[slot] as float)
+        SyncCoordinate(p, 99, 3, PlayerRespawnYaw[slot] as float)
+    }
+
+    event OnUpdate() {
+        if !IsInited { return }
+        var dt = 0.033
+
+        // STATE 0: CHỜ PHÒNG CHỜ / LOBBY ĐẾM NGƯỢC 60 GIÂY TOÀN SERVER
+        if RaceState == 0 {
+            GlobalLobbyTimer -= dt
+            
+            var currentSec = math.Floor(GlobalLobbyTimer) as int
+            if currentSec != LastBroadcastSec && currentSec >= 0 {
+                LastBroadcastSec = currentSec
+                var allPlayersLobby = std.GetAllPlayers()
+                var lCount = list.Length(allPlayersLobby as List<object>)
+                for lI = 0, lCount, 1 {
+                    var lp = allPlayersLobby[lI] as entity<Player>
+                    if lp != nil {
+                        var slot = GetPlayerSlot(lp)
+                        if slot >= 0 {
+                            SendCheckpointUpdate(lp, slot)
+                        }
+                        // Gửi số giây còn lại (6000 + số giây) xuống UI Client
+                        std.DispatchEventToEntity(onRaceCommand, lp, PlatformType.Client, List<int>{6000 + currentSec})
+                    }
+                }
+            }
+
+            if GlobalLobbyTimer <= 0.0 {
+                GlobalLobbyTimer = 0.0
+                RaceState = 1
+                CountdownTimer = 5.0
+                HasSentCountdown = false
+                LastLoggedSec = -1
+                LastCountdownBroadcastSec = -1
+                
+                var allPlayers = std.GetAllPlayers()
+                var pCount = list.Length(allPlayers as List<object>)
+                for i = 0, pCount, 1 {
+                    var p = allPlayers[i] as entity<Player>
+                    if p != nil {
+                        var slot = GetPlayerSlot(p)
+                        SyncAllCheckpointsToPlayer(p)
+                        SyncAllWaypointsToPlayer(p)
+                        if slot >= 0 { SendCheckpointUpdate(p, slot) }
+                        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{1})
+                    }
+                }
+                // LogInfo("[RaceManager] Hết thời gian phòng chờ! Bắt đầu vào vạch xuất phát.")
+            }
+            return
+        }
+
+        // STATE 1: CHỜ SAU SPAWN (2s) RỒI ĐẾM NGƯỢC 3-2-1 (3s) VÀ XUẤT PHÁT GO
+        if RaceState == 1 {
+            CountdownTimer -= dt
+
+            var cdSec = math.Floor(CountdownTimer + 0.999) as int
+            if cdSec >= 1 && cdSec <= 3 && cdSec != LastCountdownBroadcastSec {
+                LastCountdownBroadcastSec = cdSec
+                var allPlayersCd = std.GetAllPlayers()
+                var cdCount = list.Length(allPlayersCd as List<object>)
+                for cdI = 0, cdCount, 1 {
+                    var cdP = allPlayersCd[cdI] as entity<Player>
+                    if cdP != nil {
+                        // 43 = Số 3, 42 = Số 2, 41 = Số 1
+                        std.DispatchEventToEntity(onRaceCommand, cdP, PlatformType.Client, List<int>{40 + cdSec})
+                    }
+                }
+            }
+
+            if CountdownTimer <= 0.0 {
+                CountdownTimer = 0.0
+                RaceState = 2
+                RaceTimer = 0.0
+
+                var allPlayers = std.GetAllPlayers()
+                var pCount = list.Length(allPlayers as List<object>)
+                for i = 0, pCount, 1 {
+                    var p = allPlayers[i] as entity<Player>
+                    if p != nil {
+                        var slot = GetPlayerSlot(p)
+                        if slot >= 0 {
+                            PlayerNextCP[slot] = 1
+                            PlayerLap[slot] = 1
+                            PlayerFinished[slot] = 0
+                            PlayerFinishOrder[slot] = 0
+                            SendCheckpointUpdate(p, slot)
+                        }
+                        SyncAllWaypointsToPlayer(p)
+                        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{2})
+                    }
+                }
+                // LogInfo("[RaceManager] 🚀 XUẤT PHÁT CHO TẤT CẢ!")
+            }
+            return
+        }
+
+        // STATE 2: ĐANG ĐUA — Checkpoint detection + Lap tracking
+        // STATE 2: ĐANG ĐUA — Checkpoint detection + Lap tracking
+        if RaceState == 2 {
+            if TotalCheckpoints < 2 { return }
+            RaceTimer += dt
+
+            var allPlayers = std.GetAllPlayers()
+            var pCount = list.Length(allPlayers as List<object>)
+
+            for i = 0, pCount, 1 {
+                var p = allPlayers[i] as entity<Player>
+                if p == nil { continue }
+
+                var slot = GetPlayerSlot(p)
+                if slot < 0 { continue }
+
+                var finished = PlayerFinished[slot] as int
+                if finished == 1 { continue }
+
+                // Lấy vị trí player từ client sync proxy
+                var playerPos = p<rms>.TargetPos
+                var nextCP = PlayerNextCP[slot] as int
+                var cpX = CheckpointX[nextCP]
+                var cpZ = CheckpointZ[nextCP]
+
+                var dist = DistXZ(playerPos.X, playerPos.Z, cpX, cpZ)
+                if dist < CheckpointRadius {
+                    // ĐÃ ĐI QUA CHECKPOINT!
+                    var currentLap = PlayerLap[slot] as int
+                    var cpY = CheckpointY[nextCP]
+
+                    var isFinishPass = false
+                    if TotalLaps <= 0 {
+                        isFinishPass = true
+                    } else if nextCP == 0 && currentLap >= TotalLaps {
+                        isFinishPass = true
+                    }
+
+                    if isFinishPass {
+                        // HOÀN THÀNH VỀ ĐÍCH!
+                        FinishCount += 1
+                        PlayerFinished[slot] = 1
+                        PlayerFinishOrder[slot] = FinishCount
+                        // Gửi finish event (cmdType=900 + hạng)
+                        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{900 + FinishCount})
+
+                        // Kiểm tra và lưu kỷ lục vào Leaderboard (TimerRank)
+                        var finishMs = math.Round(RaceTimer * 1000.0) as int
+                        
+                        kartRank.CheckAndSaveRecord(p, finishMs, out var isNewRecord)
+                    } else if nextCP == 0 {
+                        // Sang vòng tiếp — CP0 cũng là respawn point cho vòng mới
+                        currentLap += 1
+                        PlayerLap[slot] = currentLap
+                        PlayerNextCP[slot] = 1
+                        PlayerRespawnX[slot] = cpX
+                        PlayerRespawnY[slot] = cpY
+                        PlayerRespawnZ[slot] = cpZ
+                        var respawnYaw = 0.0
+                        if TotalWaypoints >= 2 {
+                            respawnYaw = CalcYawByWaypointAt(cpX, cpZ)
+                        } else {
+                            respawnYaw = CalcYawBetweenCPs(0, 1)
+                        }
+                        PlayerRespawnYaw[slot] = respawnYaw
+                        // LogInfo("[RaceManager] 🔄 Player " + p<Entity>.Name + " vào vòng " + convert.ToString(currentLap))
+                    } else {
+                        // CHECKPOINT THƯỜNG
+                        PlayerRespawnX[slot] = cpX
+                        PlayerRespawnY[slot] = cpY
+                        PlayerRespawnZ[slot] = cpZ
+
+                        var nextIndex = nextCP + 1
+                        if nextIndex >= TotalCheckpoints {
+                            nextIndex = 0
+                        }
+                        var respawnYaw = 0.0
+                        if TotalWaypoints >= 2 {
+                            respawnYaw = CalcYawByWaypointAt(cpX, cpZ)
+                        } else {
+                            respawnYaw = CalcYawBetweenCPs(nextCP, nextIndex)
+                        }
+                        PlayerRespawnYaw[slot] = respawnYaw
+                        PlayerNextCP[slot] = nextIndex
+                        // LogInfo("[RaceManager] ✅ Player " + p<Entity>.Name + " qua CP" + convert.ToString(nextCP))
+                    }
+
+                    // Gửi cập nhật cho player này
+                    SendCheckpointUpdate(p, slot)
+
+                    // Cập nhật rank cho TẤT CẢ player
+                    for j = 0, pCount, 1 {
+                        if j == i { continue }
+                        var pj = allPlayers[j] as entity<Player>
+                        if pj == nil { continue }
+                        var slotJ = GetPlayerSlot(pj)
+                        if slotJ >= 0 {
+                            SendCheckpointUpdate(pj, slotJ)
+                        }
+                    }
+                }
+            }
+            // CẬP NHẬT XẾP HẠNG REAL-TIME THEO WAYPOINT (MỖI 0.1s)
+            RealtimeRankTimer += dt
+            if RealtimeRankTimer >= 0.1 {
+                RealtimeRankTimer = 0.0
+                for r = 0, pCount, 1 {
+                    var pr = allPlayers[r] as entity<Player>
+                    if pr != nil {
+                        var slotR = GetPlayerSlot(pr)
+                        if slotR >= 0 {
+                            var pScore = GetProgressScore(slotR)
+                            var pPos = CalcPosition(slotR)
+                            pr<rms>.CurrentScore = pScore
+                            pr<rms>.CurrentRank = pPos
+                            std.DispatchEventToEntity(onRaceCommand, pr, PlatformType.Client, List<int>{200 + pPos})
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Phản hồi yêu cầu của riêng từng Player
+    event RequestRaceState(playerEnt entity<Player>) {
+        if RaceState == 2 {
+            if TotalCheckpoints < 2 { return }
+            std.DispatchEventToEntity(onRaceCommand, playerEnt, PlatformType.Client, List<int>{2})
+            // std.LogInfo("[RaceManager] Mở khóa lại cho Player: " + playerEnt<Entity>.Name)
+
+            var slot = GetPlayerSlot(playerEnt)
+            if slot >= 0 {
+                SyncAllCheckpointsToPlayer(playerEnt)
+                SyncAllWaypointsToPlayer(playerEnt)
+                SendCheckpointUpdate(playerEnt, slot)
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

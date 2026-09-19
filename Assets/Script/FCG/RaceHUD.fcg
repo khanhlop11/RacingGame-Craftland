@@ -1,0 +1,29 @@
+// RaceHUD.fcg
+// Gắn vào: Root của New UI.ui HOẶC một Widget Text hiển thị tốc độ
+// Platform: Client
+
+import "StdLibrary.fcc" as std
+import "Hud.fcc" as hud
+import "Player.fcc" as player
+import "Convert.fcc" as convert
+
+[platform_client]
+graph RaceHUD {
+    SpeedTextWidget entity = nil  // Tự gán trong Craftland Studio (Widget Label hiển thị tốc độ)
+
+    event OnAwake() {
+        // Tạo UI trên client (tham chiếu tới New UI.ui của bạn)
+        // Nếu bạn đã tự load UI từ Craftland Studio thì không cần dòng dưới
+        // Hud.CreateCustomUIClient(out var ui, EditorGenLib.EResUI.NewUI) 
+        LogInfo("[HUD] RaceHUD khởi động (client)")
+    }
+
+    event OnUpdate() {
+        // Tốc độ hiện tại được lưu trong RacingMovement của player phía Server
+        // Do giới hạn kiến trúc Client/Server, tốc độ hiển thị tạm thời là hardcode
+        // → Sau khi thêm hệ thống Custom Property cho Player, sẽ đồng bộ được
+        if SpeedTextWidget != nil {
+            SpeedTextWidget<UIWidgetLabel>.Content = "TỐC ĐỘ: --- KM/H"
+        }
+    }
+}

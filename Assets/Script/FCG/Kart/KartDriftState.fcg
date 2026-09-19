@@ -1,0 +1,62 @@
+// KartDriftState.fcg — drift state machine scalar/state helpers
+// Platform: Client
+// Purpose: own drift transition decisions while RacingMovement keeps canonical state variables.
+import "StdLibrary.fcc" as std
+
+[platform_client]
+static graph KartDriftState {
+    func CalcFlowTimerNext(current float, dt float, isBrakeHeld bool, holdTime float) float {
+        var next = current
+        if isBrakeHeld {
+            next = holdTime
+        } else {
+            next -= dt
+            if next < 0.0 { next = 0.0 }
+        }
+        return next as float
+    }
+
+    func CalcJustLandedTimerNext(current float, dt float) float {
+        var next = current
+        if next > 0.0 {
+            next -= dt
+            if next < 0.0 { next = 0.0 }
+        }
+        return next as float
+    }
+
+    func IsDriftRaw(driftState int, driftStateEnter int, driftStateHold int) bool {
+        return ((driftState == driftStateEnter) || (driftState == driftStateHold)) as bool
+    }
+
+    func IsDriftActive(driftState int, driftStateEnter int, driftStateHold int, driftStateExit int, driftFlowTimer float) bool {
+        var driftRaw = IsDriftRaw(driftState, driftStateEnter, driftStateHold)
+        return (driftRaw || (driftState == driftStateExit && driftFlowTimer > 0.0)) as bool
+    }
+
+    func CalcBlendNext(current float, dt float, isDriftActive bool, enterSharp float, exitSharp float) float {
+        var next = current
+        if isDriftActive {
+            next += dt * enterSharp
+            if next > 1.0 { next = 1.0 }
+        } else {
+            next -= dt * exitSharp
+            if next < 0.0 { next = 0.0 }
+        }
+        return next as float
+    }
+
+    func ShouldEnterDrift(isBraking bool, isStrictlyGrounded bool, driftState int, driftStateHold int, driftStateEnter int, driftStateAir int, driftStateLanding int, driftStateCrash int, speedKmh float, minDriftSpeed float, hasTurnInput bool) bool {
+        if driftState == driftStateAir || driftState == driftStateLanding || driftState == driftStateCrash { return false as bool }
+        // Speed gate: drift only when going fast enough (reference: currentspeed > 40)
+        if speedKmh < minDriftSpeed { return false as bool }
+        // Turn gate: drift only when steering (reference: horizontal != 0)
+        if !hasTurnInput { return false as bool }
+        return (isBraking && isStrictlyGrounded && driftState != driftStateHold && driftState != driftStateEnter) as bool
+    }
+
+    func ShouldExitDrift(isBraking bool, driftState int, driftStateHold int, driftStateEnter int, driftStateAir int, driftStateLanding int, driftStateCrash int) bool {
+        if driftState == driftStateAir || driftState == driftStateLanding || driftState == driftStateCrash { return false as bool }
+        return (!isBraking && (driftState == driftStateHold || driftState == driftStateEnter)) as bool
+    }
+}

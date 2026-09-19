@@ -1,0 +1,120 @@
+import "Math.fcc" as math
+
+// ============================================================
+// KartCameraMath.fcg
+// Pure scalar camera math helpers for RacingMovement.
+//
+// Compiler-safe extraction:
+// - No Event parameter.
+// - No entity/component parameter.
+// - No Transform/Vector/Quaternion parameter.
+// - Only float/bool scalar calculations.
+// ============================================================
+[platform_client]
+static graph KartCameraMath {
+
+    func CalcDriftRollTarget(isDrift bool, turnInput float, driftBlend float, camDriftRollMax float) float {
+        var targetRoll = 0.0
+        if turnInput != 0.0 {
+            var cameraLeanFactor = 0.55
+            if isDrift { cameraLeanFactor = driftBlend }
+            targetRoll = -turnInput * camDriftRollMax * cameraLeanFactor
+        }
+        return targetRoll
+    }
+
+    func CalcDriftSideTarget(isDrift bool, turnInput float, driftBlend float, camDriftSideMax float) float {
+        var targetSide = 0.0
+        if turnInput != 0.0 {
+            var cameraSideFactor = 0.55
+            if isDrift { cameraSideFactor = driftBlend }
+            targetSide = turnInput * camDriftSideMax * cameraSideFactor
+        }
+        return targetSide
+    }
+
+    func CalcDriftRollLerpSpeed(isDrift bool, turnInput float, isBoosting bool, currentSide float) float {
+        var driftRollLerpSpeed = 4.0
+        if isDrift && turnInput != 0.0 {
+            driftRollLerpSpeed = 4.8
+        }
+        var isReversing = (turnInput > 0.0 && currentSide < -0.05) || (turnInput < 0.0 && currentSide > 0.05)
+        if isReversing {
+            driftRollLerpSpeed = 2.25
+        }
+        if isBoosting && turnInput != 0.0 && !isReversing {
+            driftRollLerpSpeed *= 1.15
+        }
+        return driftRollLerpSpeed
+    }
+
+    func CalcDriftSideLerpSpeed(isDrift bool, turnInput float, isBoosting bool, currentSide float) float {
+        var driftSideLerpSpeed = 1.8
+        if isDrift && turnInput != 0.0 {
+            driftSideLerpSpeed = 3.8
+        }
+        var isReversing = (turnInput > 0.0 && currentSide < -0.05) || (turnInput < 0.0 && currentSide > 0.05)
+        if isReversing {
+            driftSideLerpSpeed = 1.8
+        }
+        if isBoosting && turnInput != 0.0 && !isReversing {
+            driftSideLerpSpeed *= 1.15
+        }
+        return driftSideLerpSpeed
+    }
+
+    func CalcAirPitchTarget(airTime float, camAirPitchMax float) float {
+        if airTime > 0.15 { return camAirPitchMax }
+        return 0.0
+    }
+
+    func CalcAirRollTarget(airTime float, stuntRoll float) float {
+        if airTime > 0.15 { return stuntRoll }
+        return 0.0
+    }
+
+    func CalcLagBackTarget(speedRatio float, isBoosting bool, airTime float, driftBlend float, camLagBackMax float, camBoostLagPulse float, nitroTimeActive float) float {
+        var targetBack = speedRatio * camLagBackMax
+        if isBoosting {
+            var pulseFactor = math.Exponentiation(2.71828183, -nitroTimeActive * 3.0) as float
+            targetBack += camBoostLagPulse * 1.5 * pulseFactor
+        }
+        if driftBlend > 0.05 {
+            targetBack += driftBlend * 0.35
+        }
+        if airTime > 0.15 {
+            targetBack += 0.35
+        }
+        return targetBack
+    }
+
+    func CalcFovTarget(speedRatio float, isDriftActive bool, driftBlend float, isBoosting bool, nitroTimeActive float, shakeTime float, fovMin float, fovMax float, fovBoost float, camFovBreathAmp float) float {
+        var targetFOV = fovMin + (fovMax - fovMin) * speedRatio
+        var fovBreath = math.Sin(shakeTime * 2.5) * camFovBreathAmp * speedRatio
+        targetFOV += fovBreath
+        if isDriftActive {
+            targetFOV += 2.5 * driftBlend
+        }
+        if isBoosting || fovBoost > targetFOV {
+            targetFOV = fovBoost
+        }
+        return targetFOV
+    }
+
+    func CalcFovLerpSpeed(isBoosting bool) float {
+        if isBoosting { return 7.0 }
+        return 1.8
+    }
+
+    func CalcLookAheadTarget(isStableGrounded bool, speedRatio float, camLookAheadMax float) float {
+        var lookAheadTarget = 0.0
+        if isStableGrounded && speedRatio > 0.0 {
+            var lookAheadRamp = (speedRatio - 0.4) / 0.6
+            if lookAheadRamp < 0.0 { lookAheadRamp = 0.0 }
+            if lookAheadRamp > 1.0 { lookAheadRamp = 1.0 }
+            lookAheadTarget = camLookAheadMax * lookAheadRamp
+        }
+        return lookAheadTarget
+    }
+}
+

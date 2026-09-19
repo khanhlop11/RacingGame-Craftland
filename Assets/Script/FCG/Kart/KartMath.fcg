@@ -1,0 +1,93 @@
+import "Math.fcc" as math
+
+// ============================================================
+// KartMath.fcg
+// Pure scalar math helpers for RacingMovement.
+//
+// Compiler-safe extraction:
+// - No Event parameter.
+// - No entity/component parameter.
+// - No Transform/Vector/Quaternion parameter.
+// - Only float/bool scalar calculations.
+// ============================================================
+[platform_client]
+static graph KartMath {
+
+    // Phanh theo -Acceleration: cùng curve + buffer như lúc tăng tốc (đối xứng)
+    // referenceMax = trần quãng hãm (TopSpeed / BoostTopSpeed); targetSpd = sàn (TopSpeed / 50% drift)
+    func ApplyDecelLikeAccel(curFwdSpd float, targetSpd float, referenceMax float, physAccelRate float, decelMult float, dt float, accelerationCurve float) float {
+        if curFwdSpd <= targetSpd { return curFwdSpd }
+        var span = referenceMax - targetSpd
+        if span < 0.01 { span = 0.01 }
+        var overshoot = curFwdSpd - targetSpd
+        var overshootRatio = overshoot / span
+        if overshootRatio > 1.0 { overshootRatio = 1.0 }
+        // Xa sàn → ramp cao (như ga đầu); sát sàn → ramp thấp + buffer (như sắp chạm TopSpeed)
+        var decelRamp = math.Lerp(accelerationCurve * 5.0, 1.0, (1.0 - overshootRatio) * (1.0 - overshootRatio))
+        var limitBuffer = 2.0
+        var decelLimitMult = 1.0
+        if overshoot >= span {
+            decelLimitMult = 0.0
+        } else if overshoot > span - limitBuffer {
+            decelLimitMult = (span - overshoot) / limitBuffer
+        }
+        var decel = physAccelRate * decelRamp * decelLimitMult * decelMult * dt
+        var next = curFwdSpd - decel
+        if next < targetSpd { next = targetSpd }
+        return next
+    }
+
+    func NormalizeAngle180(angle float) float {
+        var a = angle
+        if a > 180.0 { a -= 360.0 }
+        if a < -180.0 { a += 360.0 }
+        return a
+    }
+
+    func CalcHighSpeedSteerFactor(speedKmh float, highSpeedSteerStart float, highSpeedSteerFloor float) float {
+        if speedKmh <= highSpeedSteerStart { return 1.0 }
+        var t = (speedKmh - highSpeedSteerStart) / 190.0
+        if t > 1.0 { t = 1.0 }
+        return math.Lerp(1.0, highSpeedSteerFloor, t)
+    }
+
+    func CalcTurnInput(isTurningLeft bool, isTurningRight bool) float {
+        var turnInput = 0.0
+        if isTurningLeft { turnInput = -1.0 }
+        if isTurningRight { turnInput = 1.0 }
+        return turnInput
+    }
+
+    func DisplaySpeedToPhysSpeed(displaySpeed float, speedUnitScale float) float {
+        var safeScale = speedUnitScale
+        if safeScale <= 0.0 { safeScale = 1.0 }
+        return displaySpeed / (36.0 * safeScale)
+    }
+
+    func DisplayAccelToPhysAccel(displayAccel float, accelUnitScale float) float {
+        var safeScale = accelUnitScale
+        if safeScale <= 0.0 { safeScale = 1.0 }
+        return (displayAccel / safeScale) / 36.0
+    }
+
+    func PhysSpeedToDisplaySpeed(physSpeed float, speedUnitScale float) float {
+        var safeScale = speedUnitScale
+        if safeScale <= 0.0 { safeScale = 1.0 }
+        return physSpeed * 36.0 * safeScale
+    }
+
+    func CalcExpLerpFactor(sharpness float, dt float) float {
+        if sharpness <= 0.0 || dt <= 0.0 { return 0.0 }
+        var factor = 1.0 - math.Exponentiation(2.71828183, -(sharpness * dt))
+        if factor < 0.0 { factor = 0.0 }
+        if factor > 1.0 { factor = 1.0 }
+        return factor
+    }
+
+    func CalcClampedSpeedRatio(currentSpeedKmh float, topSpeed float) float {
+        var speedRatio = currentSpeedKmh / topSpeed
+        if speedRatio > 1.0 { speedRatio = 1.0 }
+        if speedRatio < 0.0 { speedRatio = 0.0 }
+        return speedRatio
+    }
+}

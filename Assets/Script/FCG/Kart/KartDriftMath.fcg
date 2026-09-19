@@ -1,0 +1,119 @@
+import "Math.fcc" as math
+import "./KartMath.fcg" as KartMath
+
+// ============================================================
+// KartDriftMath.fcg
+// Pure scalar drift/lateral helpers for RacingMovement.
+//
+// Compiler-safe extraction:
+// - No Event parameter.
+// - No entity/component parameter.
+// - No Transform/Vector/Quaternion parameter.
+// - Only float/bool scalar calculations.
+// - State booleans/timers stay owned by RacingMovement.
+// ============================================================
+[platform_client]
+static graph KartDriftMath {
+
+    func CalcTargetGrip(grip float, driftGrip float, driftGripAir float, boostGripMult float, driftBlend float, isDriftActive bool, isBoosting bool, isGrounded bool) float {
+        var target = grip
+        if isDriftActive {
+            var driftG = driftGrip
+            if !isGrounded { driftG = driftGripAir }
+            target = grip + (driftG - grip) * driftBlend
+        } else if isBoosting {
+            target = grip * boostGripMult
+        }
+        return target
+    }
+
+    func CalcDynamicGripNext(currentDynamicGrip float, targetGrip float, dt float) float {
+        return currentDynamicGrip + (targetGrip - currentDynamicGrip) * (dt * 5.0)
+    }
+
+    func CalcDriftEntrySpeedNext(curFwdSpd float, sustainSpd float, physAccel float, driftEntryDecelMult float, accelerationCurve float, dt float) float {
+        var ceiling = curFwdSpd
+        if ceiling < sustainSpd { ceiling = sustainSpd + 0.5 }
+        return KartMath.ApplyDecelLikeAccel(curFwdSpd, sustainSpd, ceiling, physAccel, driftEntryDecelMult, dt, accelerationCurve)
+    }
+
+    func ShouldFinishDriftEntryDecel(curFwdSpd float, sustainSpd float) bool {
+        if curFwdSpd <= sustainSpd * 1.02 { return true }
+        return false
+    }
+
+    func CalcEntryKickLat(lat float, turnInput float, speedKmh float, topSpeed float, driftEntryKickPower float) float {
+        var kickMag = driftEntryKickPower * (speedKmh / topSpeed)
+        if kickMag > driftEntryKickPower { kickMag = driftEntryKickPower }
+        return lat + turnInput * kickMag
+    }
+
+    func CalcTractionRecoveryTimerNext(tractionRecoveryTimer float, tractionRecoveryWindow float, isDriftActive bool, dt float) float {
+        if isDriftActive { return 0.0 }
+        var nextTimer = tractionRecoveryTimer
+        if nextTimer < tractionRecoveryWindow {
+            nextTimer = nextTimer + dt
+        }
+        return nextTimer
+    }
+
+    func CalcGripKill(currentDynamicGrip float, isDriftActive bool, isBoosting bool, tractionRecoveryTimer float, tractionRecoveryWindow float, driftLatGripKeep float, dt float) float {
+        var gripKill = currentDynamicGrip * 14.0 * dt
+        if isDriftActive {
+            gripKill = gripKill * driftLatGripKeep
+        } else {
+            var recoveryBlend = tractionRecoveryTimer / tractionRecoveryWindow
+            if recoveryBlend > 1.0 { recoveryBlend = 1.0 }
+            var baseGripFactor = 0.65
+            var recoveryGripFactor = math.Lerp(driftLatGripKeep * 2.5, baseGripFactor, recoveryBlend)
+            gripKill = gripKill * recoveryGripFactor
+        }
+        if isBoosting { gripKill = gripKill * 0.80 }
+        if gripKill > 0.92 { gripKill = 0.92 }
+        return gripKill
+    }
+
+    func ApplyTractionRecoveryDamp(lat float, isDriftActive bool, tractionRecoveryTimer float, tractionRecoveryWindow float, tractionRecoverySharp float, dt float) float {
+        if isDriftActive { return lat }
+        var recoveryBlend = tractionRecoveryTimer / tractionRecoveryWindow
+        if recoveryBlend > 1.0 { recoveryBlend = 1.0 }
+        if recoveryBlend < 1.0 {
+            var recoveryDamp = (1.0 - recoveryBlend) * tractionRecoverySharp * dt
+            if recoveryDamp > 0.85 { recoveryDamp = 0.85 }
+            return lat * (1.0 - recoveryDamp)
+        }
+        return lat
+    }
+
+    func ApplyGripKill(lat float, gripKill float) float {
+        return lat * (1.0 - gripKill)
+    }
+
+    func ApplyDriftSlideForces(lat float, turnInput float, curFwdSpd float, speedKmh float, topSpeed float, driftBlend float, driftLatSlideGain float, driftCentrifugalGain float, dt float) float {
+        var spdN = math.Abs(curFwdSpd) as float
+        if spdN < 0.05 { spdN = 0.05 }
+        var slidePush = turnInput * driftLatSlideGain * driftBlend * spdN * 1.8 * dt
+        var centrifugal = turnInput * driftCentrifugalGain * driftBlend * spdN * (speedKmh / topSpeed) * 1.6 * dt
+        return lat + slidePush + centrifugal
+    }
+
+    func CalcDriftSlipMemoryNext(driftSlipMemory float, lat float, dt float) float {
+        return driftSlipMemory + (lat - driftSlipMemory) * (dt * 4.5)
+    }
+
+    func ApplyDriftSlipRetain(lat float, driftSlipMemory float, driftSlipRetain float) float {
+        return lat * (1.0 - driftSlipRetain) + driftSlipMemory * driftSlipRetain
+    }
+
+    func ApplyDriftExitCarry(lat float, driftSlipMemory float, driftFlowTimer float, driftFlowHoldTime float, dt float) float {
+        var carry = driftFlowTimer / driftFlowHoldTime
+        if carry > 1.0 { carry = 1.0 }
+        return lat + driftSlipMemory * carry * 0.35 * dt * 8.0
+    }
+
+    func CalcDriftSlipMemoryDecay(driftSlipMemory float, driftSlipDecay float, dt float) float {
+        var memory = driftSlipMemory * (1.0 - dt * driftSlipDecay)
+        if math.Abs(memory) as float < 0.02 { memory = 0.0 }
+        return memory
+    }
+}

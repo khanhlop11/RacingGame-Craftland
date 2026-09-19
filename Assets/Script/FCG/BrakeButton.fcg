@@ -1,0 +1,43 @@
+// BrakeButton.fcg — Gắn vào Button DRIFT trong UI
+// Platform: Client
+
+import "StdLibrary.fcc" as std
+import "Player.fcc" as player
+import "Hud.fcc" as hud
+import "EditorGenLib.fcc" as EditorGenLib
+import "Camera.fcc" as Camera
+import "./Kart/KartInputActions.fcg" as KartInputActions
+
+[platform_client]
+graph BrakeButton {
+    
+    // NHẤN GIỮ: Kích hoạt Drift bình thường
+    event OnPressed(p entity<Player>) {
+        KartInputActions.PressBrake(p)
+    }
+
+    // // NHẤN ĐÚP: Kích hoạt tuyệt chiêu Xoay 360 độ (CHỈ TRÊN KHÔNG)
+    // event OnDoubleTapped(p entity<Player>) {
+    //     if p == std.GetLocalPlayer() {
+    //         p<rm>.IsBraking = true 
+            
+    //         // ĐIỀU KIỆN KÍCH HOẠT:
+    //         // Xe phải đang lơ lửng trên không ít nhất 0.15s (tránh ổ gà, xóc nảy nhẹ)
+    //         if p<rm>.AirTime > 0.15 {
+    //             if !p<rm>.IsFlatSpinning {
+    //                 p<rm>.IsFlatSpinning = true
+    //                 std.LogInfo("[BrakeButton] Cất cánh thành công! 360 FLAT SPIN!")
+    //             }
+    //         } else {
+    //             std.LogInfo("[BrakeButton] Xe chưa rời dốc hoặc đang ở mặt đất. Từ chối Flat Spin!")
+    //         }
+
+    //         if p<rm>.IsBoosting { p<rm>.IsBoosting = false }
+    //     }
+    // }
+
+    // NHẢ PHÍM: Tắt Drift
+    event OnReleased(p entity<Player>) {
+        KartInputActions.ReleaseBrake(p)
+    }
+}

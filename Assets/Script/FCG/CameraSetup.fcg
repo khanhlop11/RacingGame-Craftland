@@ -1,0 +1,54 @@
+// LƯU Ý BẮT BUỘC: Gắn thẳng vào người chơi (Player Component) như cũ.
+// Platform: Server
+
+import "StdLibrary.fcc" as std
+import "Camera.fcc" as camera
+import "Playable.fcc" as playable
+import "EditorGenLib.fcc" as EditorGenLib
+
+graph CameraSetup {
+    ThisPlayer entity<Player>
+    CamEntity  entity<Entity> = nil   // Lưu camera để ApplyFOV ghi vào
+
+    event OnAwake() {
+        var p = thisEntity as entity<Player>
+        if p == nil { return }
+        ThisPlayer = p
+
+        // Bước 1: Tạo Camera mới
+        CreateCamera(camera.CameraType.Custom, out var cam)
+        CamEntity = cam as entity<Entity>
+        CamEntity<Camera>.FOV = 65.0
+        p<Camera>.FOV = 150
+
+        // Lấy chiếc xe (Quả cầu)
+        var sphere = EditorGenLib.EResSceneMainScene.Sphere as entity<Entity>
+        var khoiCamere = EditorGenLib.EResSceneMainScene.KhoiCamere as entity<Entity>
+
+        // Ép KhoiCamere bám theo vị trí Sphere (Xe)
+        if khoiCamere != nil && sphere != nil {
+            playable.CreateFollow(khoiCamere, sphere, Vector3{0.0, 0.0, 0.0}, CoordinateSystemType.WorldPosition, out var followEntity, true)
+        }
+
+        // Bước 2: Camera bám chặt vào Khối Camera (Đứng thứ 3)
+        if khoiCamere != nil {
+            // Camera ngồi sau đít Khối Camera
+            camera.SetCameraFollow(CamEntity, khoiCamere, Vector3{0.0, 0.2, -1.1}, CoordinateSystemType.LocalPosition)
+            // Camera nhìn thẳng vào tâm Khối Camera
+            camera.SetCameraFocus(CamEntity, khoiCamere, Vector3{0.0, 0.25, 0.0}, CoordinateSystemType.LocalPosition)
+        }
+
+        // Bước 3: Chuyển sang Camera vừa tạo
+        SwitchCamera(ThisPlayer, cam, camera.CameraTransitionType.Default, 1000.0)
+
+        LogInfo("Thiết lập Camera nguyên bản bám xe thành công cho: " + ThisPlayer<Player>.NickName)
+    }
+
+    // =========================================================
+    // Nhận FOV đã tính từ RacingMovement (client) và ghi vào camera
+    // =========================================================
+    // event ApplyFOV(fov float) {
+    //     if CamEntity == nil { return }
+    //     CamEntity<Camera>.FOV = fov
+    // }
+}

@@ -1,0 +1,200 @@
+// LocalRotation.fcg — CLIENT
+// =========================================================
+// 2 vai trò hoàn toàn tách biệt (như cameraController.cs Unity):
+//
+// 1. CAMERA: SetLocalPlayerForward(VelX, VelZ) — bám hướng QUÁN TÍNH
+//    → Tương đương: camera.Lerp(cameraPos) trong cameraController.cs
+//    → Camera luôn êm ái dù xe đang drift xéo
+//
+// 2. VISUAL: KartModel.Rotation = FacingAngle — xoay theo VÔ LĂNG
+//    → Thân xe nghiêng lệch khi drift
+//    → Camera không bị ảnh hưởng vì Camera gắn vào Player (KHÔNG gắn vào KartModel)
+// =========================================================
+import "StdLibrary.fcc" as std
+import "Physics.fcc" as physics
+import "Math.fcc" as math
+import "Player.fcc" as player
+import "Time.fcc" as time
+import "EditorGenLib.fcc" as EditorGenLib
+
+[platform_client]
+graph LocalRotation {
+    // Thông số PHẢI KHỚP với RacingMovement.fcg
+    MaxSpeed        float = 12.0
+    BaseTurnSpeed   float = 85.0
+    GripDriftFactor  float = 0.15
+    SlideDriftFactor float = 0.92
+
+    // Trạng thái client prediction (mirror 100% logic Server)
+    CurrentSpeed    float = 0.0
+    FacingAngle     float = 0.0
+    VelX            float = 0.0
+    VelZ            float = 0.0
+
+    // Cờ UI
+    IsTurningLeft   bool = false
+    IsTurningRight  bool = false
+    IsBoosting      bool = false
+    IsBraking       bool = false
+
+    IsRaceStarted   bool = false   // Công tắc khởi động
+
+    [preview]
+    KartModel       entity<Entity>
+
+    CurrentFwdX     float = 0.0    // Hướng nhìn hiện tại X
+    CurrentFwdZ     float = 1.0    // Hướng nhìn hiện tại Z
+
+    IsRunning       bool = false
+    LastTimestamp   int  = 0
+
+    event OnAwake() {
+        var p = thisEntity as entity<Player>
+        if p == nil { return }
+
+        // Chỉ chạy trên local player
+        if p != std.GetLocalPlayer() { return }
+        start InitLocalClient()
+    }
+
+    async func InitLocalClient() {
+        std.WaitForNextFrame()
+        FacingAngle = 0.0
+        VelX = 0.0
+        VelZ = 0.0
+        LastTimestamp = time.GetLocalTimestamp()
+
+        IsRunning = true
+        LogInfo("[Client] LocalRotation sẵn sàng!")
+    }
+
+    event OnUpdate() {
+        if !IsRunning { return }
+
+        // --- DeltaTime động ---
+        var now = time.GetLocalTimestamp()
+        var dtMs = now - LastTimestamp
+        LastTimestamp = now
+        var dt = 0.033
+        if dtMs > 0 && dtMs < 200 {
+            dt = dtMs / 1000.0
+        }
+
+
+        // =========================================================
+        // CLIENT PREDICTION — Mirror y chang logic RacingMovement.fcg
+        // =========================================================
+        var targetSpeed = MaxSpeed
+        if !IsRaceStarted { targetSpeed = 0.0 
+        } else if IsBoosting { targetSpeed = 22.0 
+        } else if IsBraking { targetSpeed = -MaxSpeed * 0.3 } // Lùi chậm 0.3 max speed thay vì 0.5
+
+        if CurrentSpeed < targetSpeed {
+            var accel = 8.0
+            if IsBoosting { accel = 18.0 }
+            if CurrentSpeed < 0.0 && !IsBraking { accel = 8.0 * 0.8 } // Hãm xung khi buông lùi
+            CurrentSpeed = CurrentSpeed + accel * dt
+            if CurrentSpeed > targetSpeed { CurrentSpeed = targetSpeed }
+        } else if CurrentSpeed > targetSpeed {
+            var decel = 5.0
+            if IsBraking { 
+                decel = 18.0 // Đạp phanh giảm tốc cực nhanh tới 0
+                if CurrentSpeed < 0.0 { decel = 8.0 * 0.5 } // Khi bắt đầu lùi xe (speed < 0), cho gia tốc lùi chậm rãi
+            }
+            CurrentSpeed = CurrentSpeed - decel * dt
+            if CurrentSpeed < targetSpeed { CurrentSpeed = targetSpeed }
+        }
+
+        var absSpeed = CurrentSpeed
+        if absSpeed < 0.0 { absSpeed = -absSpeed }
+
+        var isDrifting = IsBraking && (IsTurningLeft || IsTurningRight) && (CurrentSpeed > 2.0)
+        var currentTurnSpeed = BaseTurnSpeed
+        if isDrifting { currentTurnSpeed = BaseTurnSpeed * 1.6 }
+
+        var speedRatio = absSpeed / MaxSpeed
+        if speedRatio > 1.0 { speedRatio = 1.0 }
+
+        if IsTurningLeft  { FacingAngle = FacingAngle - currentTurnSpeed * speedRatio * dt }
+        if IsTurningRight { FacingAngle = FacingAngle + currentTurnSpeed * speedRatio * dt }
+
+        var driftFactor = GripDriftFactor
+        if isDrifting { driftFactor = SlideDriftFactor }
+
+        var targetVX = math.Sin(FacingAngle) * CurrentSpeed
+        var targetVZ = math.Cos(FacingAngle) * CurrentSpeed
+        VelX = VelX * driftFactor + targetVX * (1.0 - driftFactor)
+        VelZ = VelZ * driftFactor + targetVZ * (1.0 - driftFactor)
+
+        // =========================================================
+        // PHẦN 1: CAMERA (NHÂN VẬT) — LÀM LỘ HÔNG XE KHI DRIFT
+        // Hướng Camera BÁM THEO QUÁN TÍNH TRƯỢT (VelX, VelZ) thay vì FacingAngle
+        // =========================================================
+        var speedSqr = VelX * VelX + VelZ * VelZ
+        var targetFwdX = 0.0
+        var targetFwdZ = 1.0
+
+        if speedSqr > 0.01 { // Xe đang lăn bánh
+            // Lấy Vector Quỹ đạo làm hướng Camera
+            var vFwd = math.Normalize(Vector3{VelX, 0.0, VelZ})
+            targetFwdX = vFwd.X
+            targetFwdZ = vFwd.Z
+            // NẾU ĐI LÙI, đảo chiều nhãn quan để Camera dòm ra đằng sau gáy
+            if CurrentSpeed < 0.0 {
+                targetFwdX = -targetFwdX
+                targetFwdZ = -targetFwdZ
+            }
+        } else {
+            // Đứng im tại chỗ -> Camera tự dóng thẳng theo Mui Xe
+            targetFwdX = math.Sin(FacingAngle)
+            targetFwdZ = math.Cos(FacingAngle)
+        }
+        var targetFwd = math.Normalize(Vector3{targetFwdX, 0.0, targetFwdZ})
+
+        var curFwd = Vector3{CurrentFwdX, 0.0, CurrentFwdZ}
+
+        // Lerp Vector thủ công (an toàn, không phụ thuộc API LerpVector3 có thể không tồn tại)
+        var lerpT = dt * 3.5
+        var lX = curFwd.X + (targetFwd.X - curFwd.X) * lerpT
+        var lZ = curFwd.Z + (targetFwd.Z - curFwd.Z) * lerpT
+        var lerpFwd = Vector3{lX, 0.0, lZ}
+        
+        // Bắt buộc Chuẩn hóa sau khi Nội Suy
+        lerpFwd = math.Normalize(lerpFwd)
+        
+        // Lưu lại trạng thái của Camera
+        CurrentFwdX = lerpFwd.X
+        CurrentFwdZ = lerpFwd.Z
+        
+        // Ép xoay cục nhân vật (Camera)
+        player.SetLocalPlayerForward(lerpFwd)
+    }
+
+    // =========================================================
+    // Cổng sự kiện UI (phải KHỚP với RacingMovement)
+    // =========================================================
+    event onTurnL()  { IsTurningLeft  = true  }
+    event offTurnL() { IsTurningLeft  = false }
+    event onTurnR()  { 
+        IsTurningRight = true  
+        IsRaceStarted  = true
+    }
+    event offTurnR() { IsTurningRight = false }
+    event onBoost()  { IsBoosting     = true  }
+    event offBoost() { IsBoosting     = false }
+    event onBrake()  { IsBraking      = true  }
+    event offBrake() { IsBraking      = false }
+
+    // Reset: xóa toàn bộ momentum cũ của LocalRotation
+    event onResetCar() {
+        CurrentSpeed   = 0.0
+        VelX           = 0.0
+        VelZ           = 0.0
+        FacingAngle    = 0.0
+        CurrentFwdX    = 0.0
+        CurrentFwdZ    = 1.0
+        IsRaceStarted  = false
+        IsBoosting     = false
+        IsBraking      = false
+    }
+}

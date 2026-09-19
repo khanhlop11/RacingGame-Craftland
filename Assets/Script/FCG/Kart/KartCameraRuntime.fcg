@@ -1,0 +1,232 @@
+// KartCameraRuntime.fcg — runtime camera value helpers
+// Platform: Client
+// Purpose: own state math for camera additive channels without touching physics authority.
+import "Math.fcc" as math
+import "./KartCameraMath.fcg" as KartCameraMath
+import "./KartMath.fcg" as KartMath
+import "Physics.fcc" as Physics
+
+[platform_client]
+static graph KartCameraRuntime {
+    func CalcDriftRollNext(current float, dt float, isDrift bool, turnInput float, isBoosting bool, driftBlend float, camDriftRollMax float, camDriftSide float) float {
+        var targetRoll = KartCameraMath.CalcDriftRollTarget(isDrift, turnInput, driftBlend, camDriftRollMax)
+        var driftRollLerpSpeed = KartCameraMath.CalcDriftRollLerpSpeed(isDrift, turnInput, isBoosting, camDriftSide)
+        var lerpT = 1.0 - math.Exponentiation(2.71828183, -(dt * driftRollLerpSpeed))
+        return (current + (targetRoll - current) * lerpT) as float
+    }
+
+    func CalcDriftSideNext(current float, dt float, isDrift bool, turnInput float, isBoosting bool, driftBlend float, camDriftSideMax float, camDriftSide float) float {
+        var targetSide = KartCameraMath.CalcDriftSideTarget(isDrift, turnInput, driftBlend, camDriftSideMax)
+        var driftSideLerpSpeed = KartCameraMath.CalcDriftSideLerpSpeed(isDrift, turnInput, isBoosting, camDriftSide)
+        var lerpT = 1.0 - math.Exponentiation(2.71828183, -(dt * driftSideLerpSpeed))
+        return (current + (targetSide - current) * lerpT) as float
+    }
+
+    func CalcVelocityYawNext(current float, dt float, vel Vector3, physicsQuat Quaternion, speedKmh float, turnInput float, isDrift bool, isStableGrounded bool, isBoosting bool, driftBlend float, velocityYawMax float) float {
+        var targetYaw = 0.0
+        var yawMax = velocityYawMax * 0.42
+        if yawMax < 4.0 { yawMax = 4.0 }
+        var yawLerpSpeed = 2.6
+
+        if isDrift {
+            yawMax = velocityYawMax * (0.42 + driftBlend * 0.28)
+            yawLerpSpeed = 4.4
+        } else if turnInput != 0.0 {
+            yawMax = velocityYawMax * 0.50
+            yawLerpSpeed = 5.2
+        }
+
+        if turnInput == 0.0 && isStableGrounded {
+            targetYaw = 0.0
+            yawLerpSpeed = 2.4
+        } else if speedKmh > 30.0 {
+            var velYaw = math.ATan2(vel.X, vel.Z)
+            var e = math.QuaternionToEulerAngle(physicsQuat)
+            var yawDiff = KartMath.NormalizeAngle180(velYaw - e.Y)
+
+            if yawDiff > yawMax { yawDiff = yawMax }
+            if yawDiff < -yawMax { yawDiff = -yawMax }
+
+            targetYaw = yawDiff
+        }
+
+        if isBoosting && turnInput != 0.0 {
+            yawLerpSpeed *= 1.35
+        }
+
+        return (current + (targetYaw - current) * KartMath.CalcExpLerpFactor(yawLerpSpeed, dt)) as float
+    }
+
+    func CalcAirPitchNext(current float, dt float, airTime float, camAirPitchMax float) float {
+        var targetPitch = KartCameraMath.CalcAirPitchTarget(airTime, camAirPitchMax)
+        return (current + (targetPitch - current) * KartMath.CalcExpLerpFactor(3.0, dt)) as float
+    }
+
+    func CalcAirRollNext(current float, dt float, airTime float, stuntRoll float) float {
+        var targetRoll = KartCameraMath.CalcAirRollTarget(airTime, stuntRoll)
+        return (current + (targetRoll - current) * KartMath.CalcExpLerpFactor(4.0, dt)) as float
+    }
+
+    func CalcLagBackNext(current float, dt float, speedRatio float, isBoosting bool, airTime float, driftBlend float, camLagBackMax float, camBoostLagPulse float, nitroTimeActive float) float {
+        var targetBack = KartCameraMath.CalcLagBackTarget(speedRatio, isBoosting, airTime, driftBlend, camLagBackMax, camBoostLagPulse, nitroTimeActive)
+        return (current + (targetBack - current) * KartMath.CalcExpLerpFactor(1.4, dt)) as float
+    }
+
+    func CalcDropOffsetNext(current float, target float, dt float, impactTimer float) float {
+        if impactTimer > 0.0 {
+            return (current + (target - current) * KartMath.CalcExpLerpFactor(2.0, dt)) as float
+        }
+        return (current + (target - current) * KartMath.CalcExpLerpFactor(1.0, dt)) as float
+    }
+
+    func CalcShakeIntensity(speedRatio float, isBoosting bool, isDriftActive bool, driftBlend float, impactTimer float) float {
+        var shakeIntensity = 0.0
+        if speedRatio > 0.75 { shakeIntensity = (speedRatio - 0.75) * 0.25 }
+        if isBoosting { shakeIntensity = 0.42 }
+        if isDriftActive { shakeIntensity += 0.06 * driftBlend }
+        if impactTimer > 0.0 {
+            var landingIntensity = (impactTimer / 0.4) * 1.25
+            if landingIntensity > shakeIntensity { shakeIntensity = landingIntensity }
+        }
+        return shakeIntensity as float
+    }
+
+    func CalcShakeX(shakeTime float, shakeIntensity float) float {
+        if shakeIntensity > 0.01 { return (math.Sin(shakeTime * 62.0) * shakeIntensity) as float }
+        return 0.0 as float
+    }
+
+    func CalcShakeY(shakeTime float, shakeIntensity float) float {
+        if shakeIntensity > 0.01 { return (math.Cos(shakeTime * 74.0) * shakeIntensity) as float }
+        return 0.0 as float
+    }
+
+    func CalcCamRotSharp(baseSharp float, catchUpSharp float, isBoosting bool, camAngularVelocity float, camAngularVelocityCap float) float {
+        var camRotSharp = baseSharp
+        if isBoosting { camRotSharp = catchUpSharp }
+        var capDegPerSec = camAngularVelocityCap * 57.2958
+        var angularOverload = camAngularVelocity - capDegPerSec
+        if angularOverload > 0.0 {
+            var dampFactor = capDegPerSec / camAngularVelocity
+            camRotSharp *= dampFactor
+            if camRotSharp < 1.2 { camRotSharp = 1.2 }
+        }
+        return camRotSharp as float
+    }
+
+    func CalcLandingRecoverTimerNext(current float, dt float) float {
+        var next = current
+        if next > 0.0 {
+            next -= dt
+            if next < 0.0 { next = 0.0 }
+        }
+        return next as float
+    }
+
+    func CalcRecoverDamp(recoveryProgress float) float {
+        return (1.0 - recoveryProgress) as float
+    }
+
+    func CalcRecoverScaledValue(value float, recoverDamp float, minContribution float) float {
+        return (value * (recoverDamp + (1.0 - recoverDamp) * minContribution)) as float
+    }
+
+    func CalcImpactTimerNext(impactTimer float, dt float) float {
+        var next = impactTimer
+        if next > 0.0 {
+            next -= dt
+        }
+        return next as float
+    }
+
+    func CalcTargetDropOffsetNext(targetDropOffset float, impactTimer float) float {
+        if impactTimer > 0.0 { return targetDropOffset as float }
+        return 0.0 as float
+    }
+
+    func CalcPredictiveLandingBlendNext(currentBlend float, predOk bool, dt float, predLandingSharp float) float {
+        var targetBlend = 0.0
+        var sharp = predLandingSharp * 0.8
+        if predOk {
+            targetBlend = 1.0
+            sharp = predLandingSharp
+        }
+        var next = currentBlend + (targetBlend - currentBlend) * (dt * sharp)
+        if next < 0.0 { next = 0.0 }
+        if next > 1.0 { next = 1.0 }
+        return next as float
+    }
+
+    func CalcPredictiveLandingBlendRecover(currentBlend float, dt float) float {
+        var next = currentBlend + (0.0 - currentBlend) * (dt * 6.0)
+        if next < 0.0 { next = 0.0 }
+        return next as float
+    }
+
+    func IsPredictiveLandingHitValid(hitEnt entity, kartModel entity, normalY float, predLandingMinNy float) bool {
+        return (hitEnt != nil && hitEnt != kartModel && normalY > predLandingMinNy) as bool
+    }
+
+    func BuildPredictiveCameraTarget(camChaseTarget Quaternion, predLandingNormal Vector3, predLandingBlend float) Quaternion {
+        var chaseUp = math.RotateVector(Vector3{0.0, 1.0, 0.0}, camChaseTarget)
+        var predAlignQ = math.QuaternionFromToRotation(chaseUp, predLandingNormal)
+        var predTargetQ = math.MultiplyQuaternion(predAlignQ, camChaseTarget)
+        return math.SlerpQuaternion(camChaseTarget, predTargetQ, predLandingBlend * 0.65)
+    }
+
+    func BuildRecoveryCameraTarget(stableVisualQuat Quaternion, stableGroundCamQuat Quaternion, landingRecoverTimer float, landingRecoverDuration float) Quaternion {
+        var recoveryProgress = landingRecoverTimer / landingRecoverDuration
+        return math.SlerpQuaternion(stableVisualQuat, stableGroundCamQuat, recoveryProgress)
+    }
+
+    func CalcRecoveryProgress(landingRecoverTimer float, landingRecoverDuration float) float {
+        return (landingRecoverTimer / landingRecoverDuration) as float
+    }
+
+    func CalcCamRotSharpAfterRecovery(camRotSharp float, recoverDamp float) float {
+        var next = camRotSharp * math.Lerp(0.3, 1.0, recoverDamp)
+        if next < 1.0 { next = 1.0 }
+        return next as float
+    }
+
+    func CalcLookAheadOffsetNext(current float, isStableGrounded bool, speedRatio float, camLookAheadMax float, dt float, camLookAheadSharp float) float {
+        var lookAheadTarget = KartCameraMath.CalcLookAheadTarget(isStableGrounded, speedRatio, camLookAheadMax)
+        return (current + (lookAheadTarget - current) * KartMath.CalcExpLerpFactor(camLookAheadSharp, dt)) as float
+    }
+
+    func CalcFovInertiaZ(currentFOV float, fovMin float) float {
+        return ((currentFOV - fovMin) * 0.015) as float
+    }
+
+    func CalcBoostPull(isBoosting bool, camBoostLagPulse float) float {
+        if isBoosting { return (camBoostLagPulse * 0.15) as float }
+        return 0.0 as float
+    }
+
+    func ComposeCameraRotation(camQuat Quaternion, camDriftRoll float, stuntCamRoll float, camAirRoll float, camDriftSlipYaw float, camVelocityYaw float, camAirPitch float, shakeTime float, shakeIntensity float) Quaternion {
+        var driftRollRad = (camDriftRoll + stuntCamRoll + camAirRoll) * 0.017453
+        var driftYawRad  = camDriftSlipYaw * 0.017453
+        var driftRollQ = math.AxisAngleToQuaternion(Vector3{0.0, 0.0, 1.0}, driftRollRad)
+        var driftYawQ  = math.AxisAngleToQuaternion(Vector3{0.0, 1.0, 0.0}, driftYawRad)
+        var driftLayerQ = math.MultiplyQuaternion(driftYawQ, driftRollQ)
+
+        var velYawRad = camVelocityYaw * 0.017453
+        var velLayerQ = math.AxisAngleToQuaternion(Vector3{0.0, 1.0, 0.0}, velYawRad)
+
+        var airPitchRad = camAirPitch * 0.017453
+        var airLayerQ = math.AxisAngleToQuaternion(Vector3{1.0, 0.0, 0.0}, airPitchRad)
+
+        var shakeRad = shakeIntensity * 0.035
+        var shakeQ = math.AxisAngleToQuaternion(
+            Vector3{math.Sin(shakeTime * 50.0), math.Cos(shakeTime * 60.0), math.Sin(shakeTime * 35.0) * 0.4},
+            shakeRad)
+
+        var composedQ = math.MultiplyQuaternion(camQuat, driftLayerQ)
+        composedQ = math.MultiplyQuaternion(composedQ, velLayerQ)
+        composedQ = math.MultiplyQuaternion(composedQ, airLayerQ)
+        composedQ = math.MultiplyQuaternion(composedQ, shakeQ)
+        return composedQ
+    }
+}
+
+

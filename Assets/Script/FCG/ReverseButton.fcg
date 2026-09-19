@@ -1,0 +1,21 @@
+// ReverseButton.fcg — Gắn vào Button PHANH / LÙI trong UI
+// Platform: Client
+//
+// Nhấn: xe phanh (giảm tốc 2.5/s → dừng trong 2s) rồi tự lùi (max -1.7)
+// Nhả:  tiếp tục tiến bình thường
+
+import "StdLibrary.fcc" as std
+import "Player.fcc" as player
+import "Hud.fcc" as hud
+import "EditorGenLib.fcc" as EditorGenLib
+import "./Kart/KartInputActions.fcg" as KartInputActions
+
+[platform_client]
+graph ReverseButton {
+    event OnPressed(p entity<Player>) {
+        KartInputActions.PressReverse(p)
+    }
+    event OnReleased(p entity<Player>) {
+        KartInputActions.ReleaseReverse(p)
+    }
+}

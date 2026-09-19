@@ -1,0 +1,18 @@
+// ResetButton.fcg
+// Gắn vào: Tay cầm UI (Nút "Khôi phục vị trí")
+// Platform: Client
+
+import "StdLibrary.fcc" as std
+import "Player.fcc" as player
+import "Hud.fcc" as hud
+import "EditorGenLib.fcc" as EditorGenLib
+[platform_client]
+graph ResetButton {
+    
+    // Khi nhận thao tác Click
+    event OnPressed(p entity<Player>) {
+        // Gửi thông báo từ UI lên RacingMovementServer (đang ở Server)
+        DispatchEventToEntity(onResetCar, p, PlatformType.Server, nil)
+    }
+
+}

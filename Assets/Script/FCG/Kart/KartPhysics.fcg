@@ -1,0 +1,98 @@
+// KartPhysics.fcg — Rigidbody force application helpers
+// Platform: Client
+// Purpose: own kart physics force/velocity writes while RacingMovement keeps update order/state.
+import "Physics.fcc" as physics
+import "Math.fcc" as math
+
+[platform_client]
+static graph KartPhysics {
+    func ApplyVelocityAssist(kartModel entity<Rigidbody>, vel Vector3, targetVelX float, targetVelY float, targetVelZ float, assist float) {
+        if kartModel == nil { return }
+        physics.AddForce(kartModel as PhysicalObject,
+            Vector3{(targetVelX - vel.X) * assist, (targetVelY - vel.Y) * assist, (targetVelZ - vel.Z) * assist},
+            ForceType.Velocity)
+    }
+
+    func ApplyAngularDamping(kartModel entity<Rigidbody>, isStableGrounded bool) {
+        if kartModel == nil { return }
+        var angDampFactor = 0.0
+        if isStableGrounded {
+            angDampFactor = 0.04
+        } else {
+            angDampFactor = 0.30
+        }
+        var av = kartModel<Rigidbody>.AngularVelocity
+        kartModel<Rigidbody>.AngularVelocity = Vector3{av.X * angDampFactor, av.Y * angDampFactor, av.Z * angDampFactor}
+    }
+
+    func ApplySuspensionForce(kartModel entity<Rigidbody>, nx float, ny float, nz float, suspForce float) {
+        if kartModel == nil { return }
+        if suspForce > 0.01 {
+            physics.AddForce(kartModel as PhysicalObject,
+                Vector3{nx * suspForce, ny * suspForce, nz * suspForce},
+                ForceType.Acceleration)
+        }
+    }
+
+    func ApplyGroundForce(kartModel entity<Rigidbody>, nx float, ny float, nz float, totalGroundForce float) {
+        if kartModel == nil { return }
+        physics.AddForce(kartModel as PhysicalObject,
+            Vector3{-nx * totalGroundForce, -ny * totalGroundForce, -nz * totalGroundForce},
+            ForceType.Acceleration)
+    }
+
+    func ApplyAirGravity(kartModel entity<Rigidbody>, gravity float, extraAirGravity float) {
+        if kartModel == nil { return }
+        physics.AddForce(kartModel as PhysicalObject,
+            Vector3{0.0, -(gravity + extraAirGravity), 0.0},
+            ForceType.Acceleration)
+    }
+
+    func CalcVelocityAlignSharp(isDriftActive bool, isStableGrounded bool, groundSharp float, driftSharp float, airSharp float) float {
+        var velAlignSharp = groundSharp
+        if isDriftActive {
+            velAlignSharp = driftSharp
+        } else if !isStableGrounded {
+            velAlignSharp = airSharp
+        }
+        return velAlignSharp as float
+    }
+
+    func CalcVelocityAssist(isDriftActive bool, isStableGrounded bool, isCrashing bool) float {
+        var assist = 0.52
+        if isDriftActive { assist = 0.32 }
+        if !isStableGrounded { assist = 0.24 }
+        if isCrashing { assist = 0.36 }
+        return assist as float
+    }
+
+    func ClampTerminalVelocity(kartModel entity<Rigidbody>, vel Vector3, terminalVelocity float) Vector3 {
+        if kartModel == nil { return vel }
+        if vel.Y < terminalVelocity {
+            vel.Y = terminalVelocity
+            kartModel<Rigidbody>.Velocity = vel
+        }
+        return vel
+    }
+
+    func ClampGroundBounceVelocity(kartModel entity<Rigidbody>, vel Vector3, lastContactNy float, maxBounceUp float) Vector3 {
+        if kartModel == nil { return vel }
+        if lastContactNy > 0.8 {
+            if vel.Y > maxBounceUp {
+                vel.Y = maxBounceUp
+                kartModel<Rigidbody>.Velocity = vel
+            }
+        }
+        return vel
+    }
+
+    func StopMovementForLock(kartModel entity<Rigidbody>) {
+        if kartModel == nil { return }
+        kartModel<Rigidbody>.Velocity = Vector3{0.0, 0.0, 0.0}
+        kartModel<Rigidbody>.AngularVelocity = Vector3{0.0, 0.0, 0.0}
+    }
+}
+
+
+
+

@@ -1,0 +1,196 @@
+// KartVisualMath.fcg — Pure scalar visual mesh math helpers
+// Platform: Client
+// Purpose: calculate mesh lean/sway/drift/stunt scalar values without owning RacingMovement state.
+
+import "Math.fcc" as math
+
+[platform_client]
+static graph KartVisualMath {
+    func CalcLeanTarget(turnInput float, isDrift bool, baseVisualLean float) float {
+        if turnInput != 0.0 {
+            if !isDrift {
+                return -baseVisualLean * turnInput
+            }
+            return -baseVisualLean * 1.20 * turnInput
+        }
+        return 0.0
+    }
+
+    func CalcCamOffsetTarget(turnInput float, isDrift bool, baseCamOffset float) float {
+        if turnInput != 0.0 {
+            if !isDrift {
+                return baseCamOffset * turnInput
+            }
+            return baseCamOffset * 1.5 * turnInput
+        }
+        return 0.0
+    }
+
+    func CalcLeanLerpSpeed(turnInput float, isDrift bool, isBoosting bool, currentCamOffset float) float {
+        var leanLerpSpeed = 0.75
+
+        if turnInput != 0.0 {
+            if !isDrift {
+                leanLerpSpeed = 2.0
+            } else {
+                leanLerpSpeed = 1.6
+            }
+        }
+
+        if (turnInput > 0.0 && currentCamOffset < -0.05) || (turnInput < 0.0 && currentCamOffset > 0.05) {
+            leanLerpSpeed = 2.8
+        }
+
+        if isBoosting && turnInput != 0.0 {
+            leanLerpSpeed *= 1.15
+        }
+
+        return leanLerpSpeed
+    }
+
+    func CalcCamOffsetLerpSpeed(turnInput float, isDrift bool, isBoosting bool, currentCamOffset float) float {
+        var camLerpSpeed = 1.2
+
+        if turnInput != 0.0 {
+            if !isDrift {
+                camLerpSpeed = 1.8
+            } else {
+                camLerpSpeed = 1.5
+            }
+        }
+
+        if (turnInput > 0.0 && currentCamOffset < -0.05) || (turnInput < 0.0 && currentCamOffset > 0.05) {
+            camLerpSpeed = 2.2
+        }
+
+        if isBoosting && turnInput != 0.0 {
+            camLerpSpeed *= 1.15
+        }
+
+        return camLerpSpeed
+    }
+
+    func CalcVisualValueNext(current float, target float, dt float, lerpSpeed float) float {
+        return current + (target - current) * (dt * lerpSpeed)
+    }
+
+    func CalcRollDirection(isReversing bool) float {
+        if isReversing { return -1.0 }
+        return 1.0
+    }
+
+    func CalcWheelRollAngleNext(currentRollAngle float, visualSpeed float, rollDir float, dt float, rollSpeedMultiplier float) float {
+        currentRollAngle += visualSpeed * rollDir * dt * rollSpeedMultiplier
+        if currentRollAngle >= 360.0 { currentRollAngle -= 360.0 }
+        if currentRollAngle < 0.0 { currentRollAngle += 360.0 }
+        return currentRollAngle
+    }
+
+    func CalcWobbleRoll(airTime float, isDrift bool) float {
+        if airTime > 0.3 && airTime < 1.5 && !isDrift {
+            var wt = airTime / 1.5
+            var wobbleAmp = (1.0 - wt) * (1.0 - wt) * 10.0
+            return math.Sin(airTime * 12.0) * wobbleAmp
+        }
+        return 0.0
+    }
+
+    func CalcWobblePitch(airTime float, isDrift bool) float {
+        if airTime > 0.3 && airTime < 1.5 && !isDrift {
+            var wt = airTime / 1.5
+            var wobbleAmp = (1.0 - wt) * (1.0 - wt) * 10.0
+            return math.Cos(airTime * 8.0) * wobbleAmp * 0.5
+        }
+        return 0.0
+    }
+
+    func CalcSwayTimerNext(swayTimer float, dt float, shouldAdvance bool) float {
+        if shouldAdvance {
+            swayTimer += dt * 90.0
+            if swayTimer >= 360.0 { swayTimer -= 360.0 }
+        }
+        return swayTimer
+    }
+
+    func CalcIdleSway(swayTimer float, speedRatio float, turnInput float, baseVisualLean float) float {
+        var turnStrength = math.Abs(turnInput) as float
+        var straightFactor = 1.0 - turnStrength
+        if straightFactor < 0.0 { straightFactor = 0.0 }
+
+        if speedRatio > 0.01 {
+            var maxAmplitude = math.Abs(baseVisualLean) as float
+            maxAmplitude *= 0.1
+            return math.Sin(swayTimer) * maxAmplitude * speedRatio * straightFactor
+        }
+
+        return 0.0
+    }
+
+    func CalcDriftTimerNext(driftTimer float, isDriftTurning bool, isGrounded bool, dt float) float {
+        if isDriftTurning && isGrounded {
+            driftTimer += dt
+            if driftTimer > 2.0 { driftTimer = 2.0 }
+        } else {
+            driftTimer -= dt * 3.0
+            if driftTimer < 0.0 { driftTimer = 0.0 }
+        }
+        return driftTimer
+    }
+
+    func CalcVisualYawTarget(turnInput float, isDriftTurning bool, driftTimer float, maxDriftYaw float) float {
+        if isDriftTurning {
+            var driftProgress = driftTimer / 2.0
+            return turnInput * maxDriftYaw * driftProgress
+        }
+        return 0.0
+    }
+
+    func CalcVisualYawLerpSpeed(isDrift bool) float {
+        if !isDrift { return 8.0 }
+        return 5.0
+    }
+
+    func CalcFlatSpinCycleAngle(flatSpinVisualAngle float) float {
+        var cycleAngle = math.Abs(flatSpinVisualAngle) as float
+        var loops = math.Floor(cycleAngle / 360.0)
+        return cycleAngle - (loops * 360.0)
+    }
+
+    func CalcFlatSpinStuntRoll(spinProgress float, spinDir float) float {
+        return math.Sin(spinProgress * 180.0) * 12.0 * spinDir
+    }
+
+    func CalcFlatSpinStuntPitch(spinProgress float) float {
+        return math.Sin(spinProgress * 180.0) * -5.0
+    }
+
+    func CalcFlatSpinCamRoll(spinProgress float, spinDir float) float {
+        return math.Sin(spinProgress * 180.0) * 8.0 * spinDir
+    }
+
+    func CalcFlatSpinVisualAngleRecover(flatSpinVisualAngle float, dt float) float {
+        var absAngle = math.Abs(flatSpinVisualAngle) as float
+        if absAngle > 0.1 {
+            var currentLoops = math.Round(flatSpinVisualAngle / 360.0)
+            var targetAngle = currentLoops * 360.0
+            flatSpinVisualAngle = flatSpinVisualAngle + (targetAngle - flatSpinVisualAngle) * (dt * 15.0)
+            var absDelta = math.Abs(flatSpinVisualAngle - targetAngle) as float
+            if absDelta < 1.0 {
+                flatSpinVisualAngle = 0.0
+            }
+            return flatSpinVisualAngle
+        }
+        return 0.0
+    }
+
+    func CalcStuntCamRollRecover(stuntCamRoll float, dt float) float {
+        return stuntCamRoll + (0.0 - stuntCamRoll) * (dt * 10.0)
+    }
+
+    func CalcVisualSharp(isDriftActive bool, driftBlend float, isStableGrounded bool) float {
+        var visualSharp = 14.5
+        if isDriftActive { visualSharp = 7.0 + driftBlend * 2.0 }
+        if !isStableGrounded { visualSharp = 4.5 }
+        return visualSharp
+    }
+}

@@ -1,0 +1,1390 @@
+// LoadUI.fcg
+// Gắn vào: Người chơi (Player Component)
+// Platform: Client
+
+import "StdLibrary.fcc" as std
+import "Hud.fcc" as hud
+import "Physics.fcc" as physics
+import "EditorGenLib.fcc" as EditorGenLib
+import "Player.fcc" as player
+import "./RacingMovement.fcg" as rm
+import "./Kart/KartCheckpoint.fcg" as KartCheckpoint
+import "Math.fcc" as math
+import "Convert.fcc" as convert
+import "List.fcc" as list
+import "Time.fcc" as time
+import "./Kart/KartCarFactory.fcg" as KartCarFactory
+
+[platform_client]
+graph LoadUI {
+    
+    MyControlUI entity<CustomUI>
+    RaceTimerWidget entity<UIWidget>
+    BestTimerWidget entity<UIWidget>
+    RaceStartTimeSec int = 0
+    LastSecondTimestamp int = 0
+    FramesInCurrentSec int = 0
+    EstimatedFps int = 60
+    CurrentRaceTimeMs int = 0
+    FinalRaceTimeMs int = 0
+    BestRaceTimeMs int = 0
+    RaceTimerRunning bool = false
+    RaceTimerFinished bool = false
+    HasCachedTimerInitPos bool = false
+    TimerInitPos Vector3 = Vector3{0.0, 0.0, 0.0}
+    TimerInitSizeDelta Vector2 = Vector2{300.0, 80.0}
+    TimerInitFontSize int = 36
+    TimerFinishLerpTimer float = 0.0
+    TimerFinishTargetY   float = 80.0   // Cao độ đồng hồ khi về đích (80.0: nằm dưới FINISH #1, không che xe giữa màn)
+    CurrentSpeedKmhText entity<UIWidget>
+    LapText entity<UIWidget>
+    Lap1Image entity<UIWidget>
+    Lap2Image entity<UIWidget>
+    Lap3Image entity<UIWidget>
+    Lap1CurrentY float = -50.0
+    Lap2CurrentY float = -100.0
+    Lap3CurrentY float = -150.0
+    PositionText entity<UIWidget>
+    FinishWidget entity<UIWidget>
+    StartWidget entity<UIWidget>
+    Count3Image entity<UIWidget>
+    Count2Image entity<UIWidget>
+    Count1Image entity<UIWidget>
+    CountGoImage entity<UIWidget>
+    CountBaseSize Vector2 = Vector2{220.0, 220.0}
+    GoBaseSize Vector2 = Vector2{360.0, 200.0}
+    NitroBar entity<UIWidget>
+    NitroBarFillAmount float = 0.0
+    NitroBarColorProgress float = 0.0
+    NitroGlowHead entity<UIWidget>
+    NitroBarStartPos Vector3 = Vector3{0.0, 0.0, 0.0}
+    NitroBarTotalWidth float = 0.0
+    HasCachedNitroBarPos bool = false
+    DirectionArrow entity<UIWidget>
+    WrongWayWidget entity<UIWidget>
+    LobbyTimerWidget entity<UIWidget>
+    LastSpeedKmh float = 0.0
+    DirectionArrowAngle float = 0.0
+    SpeedNeedle entity<UIWidget>
+    SpeedNeedleAngle float = 120.0
+    NeedleShakeTime float = 0.0
+    WrongWayUiTimer float = 0.0
+    WrongWayUiThreshold float = 2.0       // Phải chạy ngược liên tục 1.4s mới cảnh báo (chống rung giả)
+    WrongWayUiAngle float = 145.0         // Nâng lên 145° (chỉ khi thật sự quay ngược đầu xe mới cảnh báo)
+
+    // Minimap Real-time Widgets & Config
+    MinimapBg entity<UIWidget>
+    MiniMap entity<UIWidget>
+    CurrentPlayerDot entity<UIWidget>
+    PlayerDot entity<UIWidget>
+    EnemyDots List<entity<UIWidget>> = nil
+    EnemyCars List<entity<Entity>> = nil
+    OpponentCarPrefabs  List<object> = nil
+    OpponentTargetPos   List<Vector3> = nil
+    OpponentRenderPos   List<Vector3> = nil
+    OpponentTargetRot     List<Quaternion> = nil
+    OpponentRenderRot     List<Quaternion> = nil
+    OpponentVelocity      List<Vector3> = nil
+    OpponentTargetVel     List<Vector3> = nil
+    OpponentError         List<Vector3> = nil
+    OpponentLastPacketPos List<Vector3> = nil
+    OpponentInited        List<bool> = nil
+    OpponentPacketIdleTimer List<float> = nil
+    OpponentUID           List<string> = nil
+    OpponentIsQuit        List<bool> = nil
+    MyLocalSlot           int = -1
+    MinimapScaleX float = 0.446745        // Tỷ lệ chuẩn theo trường cảnh scale 2.0 (cũ 0.5655 khi cảnh 1.58: 0.5655 * 1.58 / 2.0)
+    MinimapScaleY float = 0.446745        // Tỷ lệ chuẩn theo trường cảnh scale 2.0 (cũ 0.5655 khi cảnh 1.58: 0.5655 * 1.58 / 2.0)
+    MinimapOffsetX float = 15.0           // Dịch sang phải 15px
+    MinimapOffsetY float = 80.0           // Đẩy lên trên 80px khớp hoàn hảo đường đua
+    MapMinX float = -300.0
+    MapMaxX float = 300.0
+    MapMinZ float = -300.0
+    MapMaxZ float = 300.0
+    MapBoundsCalculated bool = false
+
+    // Leaderboard Ranking Widgets
+    RankingTemplate entity<UIWidget>
+    RankingWidgets List<entity<UIWidget>> = nil
+    RankingPlayers List<entity<Player>> = nil
+    RankBaseX float = 0.0
+    RankBaseY float = 0.0
+    TestLap1Widget entity<UIWidget>
+    ProfileAssigned bool = false
+    RankingIntervalTimer float = 0.0
+
+    DriveUIRootWidget entity<UIWidget>
+    DriveUIShown bool = false
+
+    UpdateCounter int = 0
+    IsInited bool = false
+    LastOpUpdateTimestamp int = 0
+
+    event OnAwake() {
+        var p = thisEntity as entity<Player>
+        if p == nil { return }
+        
+        EnemyDots = list.New(0, 8)
+        for ed = 0, 8, 1 {
+            list.Append(EnemyDots, nil as entity<UIWidget>)
+        }
+        EnemyCars = list.New(8, 8) as List<entity<Entity>>
+        OpponentTargetPos = list.New(8, 8) as List<Vector3>
+        OpponentRenderPos = list.New(8, 8) as List<Vector3>
+        OpponentTargetRot = list.New(8, 8) as List<Quaternion>
+        OpponentRenderRot = list.New(8, 8) as List<Quaternion>
+        OpponentVelocity      = list.New(8, 8) as List<Vector3>
+        OpponentTargetVel     = list.New(8, 8) as List<Vector3>
+        OpponentError         = list.New(8, 8) as List<Vector3>
+        OpponentLastPacketPos = list.New(8, 8) as List<Vector3>
+        OpponentInited        = list.New(8, 8) as List<bool>
+        OpponentPacketIdleTimer = list.New(8, 8) as List<float>
+        OpponentUID           = list.New(8, 8) as List<string>
+        OpponentIsQuit        = list.New(8, 8) as List<bool>
+        for opInitI = 0, 8, 1 {
+            OpponentInited[opInitI] = false
+            OpponentIsQuit[opInitI] = false
+            OpponentUID[opInitI] = ""
+            EnemyCars[opInitI] = nil
+            OpponentRenderPos[opInitI] = Vector3{0.0, 0.0, 0.0}
+            OpponentRenderRot[opInitI] = Quaternion{0.0, 0.0, 0.0, 1.0}
+            OpponentVelocity[opInitI] = Vector3{0.0, 0.0, 0.0}
+            OpponentTargetVel[opInitI] = Vector3{0.0, 0.0, 0.0}
+            OpponentError[opInitI] = Vector3{0.0, 0.0, 0.0}
+            OpponentTargetRot[opInitI] = Quaternion{0.0, 0.0, 0.0, 1.0}
+            OpponentLastPacketPos[opInitI] = Vector3{0.0, 0.0, 0.0}
+            OpponentPacketIdleTimer[opInitI] = 0.0
+        }
+        RankingWidgets = list.New(0, 8)
+        RankingPlayers = list.New(0, 8)
+
+        if p != std.GetLocalPlayer() { return }
+
+        // Khởi tạo UI ControlUI ở Client (cho Tốc độ, Nitro, Minimap, Lap, Position, 60fps mượt mà)
+        hud.CreateCustomUIClient(out var ui, EditorGenLib.EResUI.ControlUI)
+        MyControlUI = ui
+        if (MyControlUI as entity) == nil { return }
+        
+        // Lấy tham chiếu các Widget
+        CurrentSpeedKmhText = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/txt_Speed")
+        LapText = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap")
+
+        // Lấy tham chiếu ảnh số vòng đua (Lap 1, Lap 2, Lap 3)
+        Lap1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/CurrentLap/1")
+        if (Lap1Image as entity) == nil { Lap1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/CurrentLap/1") }
+        if (Lap1Image as entity) == nil { Lap1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/1") }
+        if (Lap1Image as entity) == nil { Lap1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/1") }
+
+        Lap2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/CurrentLap/2")
+        if (Lap2Image as entity) == nil { Lap2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/CurrentLap/2") }
+        if (Lap2Image as entity) == nil { Lap2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/2") }
+        if (Lap2Image as entity) == nil { Lap2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/2") }
+
+        Lap3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/CurrentLap/3")
+        if (Lap3Image as entity) == nil { Lap3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/CurrentLap/3") }
+        if (Lap3Image as entity) == nil { Lap3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/3") }
+        if (Lap3Image as entity) == nil { Lap3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/3") }
+
+        if (Lap1Image as entity) != nil {
+            Lap1Image<hud.UIWidget>.IsVisible = true
+            Lap1Image<hud.UIWidget>.AnchorPosition = Vector3{Lap1Image<hud.UIWidget>.AnchorPosition.X, -50.0, 0.0}
+        }
+        if (Lap2Image as entity) != nil {
+            Lap2Image<hud.UIWidget>.IsVisible = true
+            Lap2Image<hud.UIWidget>.AnchorPosition = Vector3{Lap2Image<hud.UIWidget>.AnchorPosition.X, -100.0, 0.0}
+        }
+        if (Lap3Image as entity) != nil {
+            Lap3Image<hud.UIWidget>.IsVisible = true
+            Lap3Image<hud.UIWidget>.AnchorPosition = Vector3{Lap3Image<hud.UIWidget>.AnchorPosition.X, -150.0, 0.0}
+        }
+
+        TestLap1Widget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap (1)")
+        if (TestLap1Widget as entity) == nil {
+            TestLap1Widget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap(1)")
+        }
+        if (TestLap1Widget as entity) != nil {
+            TestLap1Widget<hud.UIWidget>.IsVisible = true
+            TestLap1Widget<UIWidgetLabel>.Content = p<Player>.UserUID
+        }
+        PositionText = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/txt_Position")
+        
+        // Widget Finish: ưu tiên nằm ngoài DriveUIRoot (/finish hoặc /Finish) để không bị ẩn khi tele DriveUIRoot
+        FinishWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/finish")
+        if (FinishWidget as entity) == nil { FinishWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Finish") }
+        if (FinishWidget as entity) == nil { FinishWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/txt_Finish") }
+        if (FinishWidget as entity) == nil { FinishWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/finish") }
+        if (FinishWidget as entity) == nil { FinishWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Finish") }
+        
+        // Widget đếm ngược phòng chờ
+        LobbyTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/LobbyTimer")
+        if (LobbyTimerWidget as entity) == nil {
+            LobbyTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/LobbyTimer")
+        }
+        if (LobbyTimerWidget as entity) == nil {
+            LobbyTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/lobbyTimer")
+        }
+        if (LobbyTimerWidget as entity) == nil {
+            LobbyTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lobbyTimer")
+        }
+        if (LobbyTimerWidget as entity) == nil {
+            LobbyTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Lobbytimer")
+        }
+        if (LobbyTimerWidget as entity) == nil {
+            LobbyTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lobbytimer")
+        }
+        if (LobbyTimerWidget as entity) == nil {
+            LobbyTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/txt_LobbyTimer")
+        }
+        if (LobbyTimerWidget as entity) != nil {
+            LobbyTimerWidget<hud.UIWidget>.IsVisible = true
+        }
+
+        // Lấy tham chiếu Widget Timer đếm mili-giây (ưu tiên /txt_timer cùng root)
+        RaceTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/txt_timer")
+        if (RaceTimerWidget as entity) == nil {
+            RaceTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/txt_Timer")
+        }
+        if (RaceTimerWidget as entity) == nil {
+            RaceTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/txt_timer")
+        }
+        if (RaceTimerWidget as entity) == nil {
+            RaceTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/txt_Timer")
+        }
+        if (RaceTimerWidget as entity) != nil {
+            // Mặc định ẩn trong phòng chờ và đếm ngược, khi GO mới hiện
+            RaceTimerWidget<hud.UIWidget>.IsVisible = false
+            RaceTimerWidget<UIWidgetLabel>.Content = "00:00.000"
+            TimerInitPos = RaceTimerWidget<hud.UIWidget>.AnchorPosition
+            TimerInitSizeDelta = RaceTimerWidget<hud.UIWidget>.SizeDelta
+            TimerInitFontSize = RaceTimerWidget<UIWidgetLabel>.FontSize
+            if TimerInitFontSize <= 0 { TimerInitFontSize = 36 }
+            HasCachedTimerInitPos = true
+        }
+
+        BestTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/txt_best")
+        if (BestTimerWidget as entity) == nil {
+            BestTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/txt_best")
+        }
+        if (BestTimerWidget as entity) == nil {
+            BestTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/txt_record")
+        }
+        if (BestTimerWidget as entity) == nil {
+            BestTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/txt_record")
+        }
+
+        StartWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Start")
+        if (StartWidget as entity) == nil {
+            StartWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/start")
+        }
+        if (StartWidget as entity) == nil {
+            StartWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Countdown")
+        }
+        if (StartWidget as entity) == nil {
+            StartWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Start")
+        }
+        if (StartWidget as entity) == nil {
+            StartWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/start")
+        }
+
+        // Lấy tham chiếu container và 4 ảnh đếm ngược 3, 2, 1, GO! (ưu tiên /Start/... ngoài DriveUIRoot)
+        var startContainer = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Start")
+        if (startContainer as entity) == nil {
+            startContainer = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/start")
+        }
+        if (startContainer as entity) == nil {
+            startContainer = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Start")
+        }
+        if (startContainer as entity) == nil {
+            startContainer = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/start")
+        }
+        if (startContainer as entity) != nil {
+            startContainer<hud.UIWidget>.IsVisible = true
+        }
+
+        Count3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Start/3")
+        if (Count3Image as entity) == nil { Count3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/start/3") }
+        if (Count3Image as entity) == nil { Count3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/3") }
+        if (Count3Image as entity) == nil { Count3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/img_3") }
+        if (Count3Image as entity) == nil { Count3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Start/3") }
+        if (Count3Image as entity) == nil { Count3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/start/3") }
+        if (Count3Image as entity) == nil { Count3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/3") }
+
+        Count2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Start/2")
+        if (Count2Image as entity) == nil { Count2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/start/2") }
+        if (Count2Image as entity) == nil { Count2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/2") }
+        if (Count2Image as entity) == nil { Count2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/img_2") }
+        if (Count2Image as entity) == nil { Count2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Start/2") }
+        if (Count2Image as entity) == nil { Count2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/start/2") }
+        if (Count2Image as entity) == nil { Count2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/2") }
+
+        Count1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Start/1")
+        if (Count1Image as entity) == nil { Count1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/start/1") }
+        if (Count1Image as entity) == nil { Count1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/1") }
+        if (Count1Image as entity) == nil { Count1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/img_1") }
+        if (Count1Image as entity) == nil { Count1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Start/1") }
+        if (Count1Image as entity) == nil { Count1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/start/1") }
+        if (Count1Image as entity) == nil { Count1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/1") }
+
+        CountGoImage = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Start/go")
+        if (CountGoImage as entity) == nil { CountGoImage = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Start/GO") }
+        if (CountGoImage as entity) == nil { CountGoImage = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/start/go") }
+        if (CountGoImage as entity) == nil { CountGoImage = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/start/GO") }
+        if (CountGoImage as entity) == nil { CountGoImage = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/go") }
+        if (CountGoImage as entity) == nil { CountGoImage = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/GO") }
+        if (CountGoImage as entity) == nil { CountGoImage = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Start/go") }
+        if (CountGoImage as entity) == nil { CountGoImage = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Start/GO") }
+
+        if (Count3Image as entity) != nil {
+            var sz3 = Count3Image<hud.UIWidget>.SizeDelta
+            if sz3.X > 10.0 && sz3.Y > 10.0 { CountBaseSize = sz3 }
+            Count3Image<hud.UIWidget>.IsVisible = false
+        }
+        if (Count2Image as entity) != nil { Count2Image<hud.UIWidget>.IsVisible = false }
+        if (Count1Image as entity) != nil { Count1Image<hud.UIWidget>.IsVisible = false }
+        if (CountGoImage as entity) != nil {
+            var szGo = CountGoImage<hud.UIWidget>.SizeDelta
+            if szGo.X > 10.0 && szGo.Y > 10.0 { GoBaseSize = szGo }
+            CountGoImage<hud.UIWidget>.IsVisible = false
+        }
+
+        NitroBar = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/NitroBar_Frame/NitroBar")
+        if (NitroBar as entity) == nil {
+            NitroBar = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/NitroBar")
+        }
+        NitroGlowHead = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/NitroBar_Frame/NitroGlowHead")
+        if (NitroGlowHead as entity) == nil {
+            NitroGlowHead = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/NitroGlowHead")
+        }
+        SpeedNeedle = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/SpeedGauge/SpeedNeedle")
+        if (SpeedNeedle as entity) == nil {
+            SpeedNeedle = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/SpeedNeedle")
+        }
+        if (SpeedNeedle as entity) != nil {
+            SpeedNeedle<hud.UIWidget>.IsVisible = true
+            SpeedNeedle<hud.UIWidget>.Angle = 120.0
+        }
+        DirectionArrow = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/DirectionArrow")
+        if (DirectionArrow as entity) != nil {
+            DirectionArrow<hud.UIWidget>.IsVisible = true
+            DirectionArrow<hud.UIWidget>.Angle = 0.0
+        } else {
+            LogError("[LoadUI] DirectionArrow widget NOT found. Check path /DirectionArrow")
+        }
+        WrongWayWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/WrongWayWarning")
+        if (WrongWayWidget as entity) != nil {
+            WrongWayWidget<hud.UIWidget>.IsVisible = false
+        }
+
+        // Lấy tham chiếu Minimap, MiniMap xoay, CurrentPlayerDot và PlayerDot template
+        MinimapBg = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/MinimapBg")
+        MiniMap = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/MinimapBg/MiniMap")
+        CurrentPlayerDot = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/MinimapBg/CurrentPlayerDot")
+        PlayerDot = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/MinimapBg/MiniMap/PlayerDot")
+        if (CurrentPlayerDot as entity) != nil {
+            CurrentPlayerDot<hud.UIWidget>.IsVisible = true
+        }
+        if (PlayerDot as entity) != nil {
+            PlayerDot<hud.UIWidget>.IsVisible = false
+        }
+
+        // Khởi tạo DriveUIRoot ở tọa độ cực lớn ngoài màn hình (9999, 9999) khi vào trận
+        DriveUIRootWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot")
+        if (DriveUIRootWidget as entity) != nil {
+            DriveUIRootWidget<hud.UIWidget>.IsVisible = true
+            DriveUIRootWidget<hud.UIWidget>.AnchorPosition = Vector3{9999.0, 9999.0, 0.0}
+            DriveUIShown = false
+        }
+
+        // Ẩn ranking bên trong ControlUI (vì Profile đã do Server hiển thị qua RankingUI)
+        var rankingRoot = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Ranking")
+        if (rankingRoot as entity) != nil {
+            rankingRoot<hud.UIWidget>.IsVisible = false
+        }
+
+        if (NitroBar as entity) != nil {
+            NitroBar<hud.UIWidget>.IsVisible = true
+            NitroBar<UIWidgetImage>.Fill = 3 as FillType
+            NitroBar<UIWidgetImage>.FillDirection = 0 as FillDirectionType
+            NitroBar<UIWidgetImage>.FillAmount = 0.0
+            NitroBar<UIWidgetImage>.Color = std.ColorRGB(255, 255, 255)
+            NitroBar<UIWidgetImage>.Alpha = 0.75
+        }
+
+        if (NitroGlowHead as entity) != nil {
+            NitroGlowHead<hud.UIWidget>.IsVisible = false
+        }
+
+        // Ẩn nút Nitro ban đầu
+        var btn = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/BoostButton")
+        if (btn as entity) != nil { 
+            btn<hud.UIWidget>.IsVisible = false 
+        }
+        
+        // Ẩn widget Finish ban đầu
+        if (FinishWidget as entity) != nil {
+            FinishWidget<hud.UIWidget>.IsVisible = false
+        }
+
+        IsInited = true
+    }
+
+    func FormatTimeMs(totalMs int) string {
+        if totalMs < 0 { totalMs = 0 }
+        var totalSec = totalMs / 1000
+        var min = totalSec / 60
+        var sec = totalSec % 60
+        var ms = totalMs % 1000
+
+        var minStr = ""
+        if min < 10 {
+            minStr = "0" + convert.NumToString(min as float, "0")
+        } else {
+            minStr = convert.NumToString(min as float, "0")
+        }
+
+        var secStr = ""
+        if sec < 10 {
+            secStr = "0" + convert.NumToString(sec as float, "0")
+        } else {
+            secStr = convert.NumToString(sec as float, "0")
+        }
+
+        var msStr = ""
+        if ms < 10 {
+            msStr = "00" + convert.NumToString(ms as float, "0")
+        } else if ms < 100 {
+            msStr = "0" + convert.NumToString(ms as float, "0")
+        } else {
+            msStr = convert.NumToString(ms as float, "0")
+        }
+
+        return minStr + ":" + secStr + "." + msStr
+    }
+
+    event SyncOpponentClient(pIndex int, carIndex int, posX float, posY float, posZ float, yaw float, velX float, velZ float, isDrifting int, senderUid string) {
+        var p = thisEntity as entity<Player>
+        if p == nil || p != std.GetLocalPlayer() { return }
+
+        // Chặn tuyệt đối nếu nhận nhầm gói của chính mình bằng UID
+        var localP = std.GetLocalPlayer()
+        if localP != nil && senderUid != "" && localP<Player>.UserUID == senderUid {
+            return
+        }
+
+        if pIndex < 0 || pIndex >= 8 { return }
+        if EnemyCars == nil || OpponentRenderPos == nil { return }
+        if OpponentUID != nil && senderUid != "" {
+            OpponentUID[pIndex] = senderUid
+        }
+        if OpponentIsQuit != nil {
+            OpponentIsQuit[pIndex] = false
+        }
+        if OpponentPacketIdleTimer != nil {
+            OpponentPacketIdleTimer[pIndex] = 0.0
+        }
+
+        // Vận tốc thực: fallback tính từ khoảng dịch chuyển nếu velX, velZ bị 0
+        var incomingSpeedSq = velX * velX + velZ * velZ
+        var calcVelX = velX
+        var calcVelZ = velZ
+        if incomingSpeedSq < 1.0 && OpponentLastPacketPos != nil {
+            var lastP = OpponentLastPacketPos[pIndex]
+            var dX = posX - lastP.X
+            var dZ = posZ - lastP.Z
+            var dSq = dX * dX + dZ * dZ
+            if dSq > 0.04 && dSq < 400.0 {
+                calcVelX = dX / 0.033
+                calcVelZ = dZ / 0.033
+            }
+        }
+        if OpponentLastPacketPos != nil {
+            OpponentLastPacketPos[pIndex] = Vector3{posX, posY, posZ}
+        }
+
+        // Tọa độ mục tiêu máy chủ (bù độ trễ mạng 33ms)
+        var serverPos = Vector3{posX + calcVelX * 0.033, posY - 0.80, posZ + calcVelZ * 0.033}
+        var targetRot = math.EulerAngleToQuaternion(Vector3{0.0, yaw, 0.0})
+        var targetVel = Vector3{calcVelX, 0.0, calcVelZ}
+
+        if EnemyCars[pIndex] == nil {
+            if OpponentCarPrefabs == nil {
+                OpponentCarPrefabs = KartCarFactory.CreateDefaultCarPrefabList()
+            }
+            var prefIdx = carIndex - 1
+            if prefIdx < 0 || prefIdx >= list.Length(OpponentCarPrefabs) {
+                prefIdx = 0
+            }
+            var carPrefab = OpponentCarPrefabs[prefIdx] as PrefabID
+            if carPrefab != nil {
+                std.CreateFromPrefab(out var spawnedCar, carPrefab)
+                EnemyCars[pIndex] = spawnedCar
+                if spawnedCar != nil {
+                    spawnedCar<Transform>.Position = serverPos
+                    spawnedCar<Transform>.RotationQ = targetRot
+                    OpponentRenderPos[pIndex] = serverPos
+                    OpponentRenderRot[pIndex] = targetRot
+                    OpponentVelocity[pIndex] = targetVel
+                    OpponentTargetVel[pIndex] = targetVel
+                    OpponentError[pIndex] = Vector3{0.0, 0.0, 0.0}
+                    OpponentTargetRot[pIndex] = targetRot
+                    OpponentInited[pIndex] = true
+                    return
+                }
+            }
+        }
+
+        if !OpponentInited[pIndex] {
+            OpponentRenderPos[pIndex] = serverPos
+            OpponentRenderRot[pIndex] = targetRot
+            OpponentVelocity[pIndex] = targetVel
+            OpponentTargetVel[pIndex] = targetVel
+            OpponentError[pIndex] = Vector3{0.0, 0.0, 0.0}
+            OpponentTargetRot[pIndex] = targetRot
+            OpponentInited[pIndex] = true
+            if EnemyCars[pIndex] != nil {
+                EnemyCars[pIndex]<Transform>.Position = serverPos
+                EnemyCars[pIndex]<Transform>.RotationQ = targetRot
+            }
+            return
+        }
+
+        // Tính sai lệch vị trí giữa server và vị trí xe đang chạy
+        var errX = serverPos.X - OpponentRenderPos[pIndex].X
+        var errY = serverPos.Y - OpponentRenderPos[pIndex].Y
+        var errZ = serverPos.Z - OpponentRenderPos[pIndex].Z
+
+        // Chống bay xe khi đối thủ dừng hoặc thoát game: xe đã đứng yên thì không nhận sai số nhảy Y lên trời
+        if incomingSpeedSq < 1.0 && errY > 0.4 {
+            errY = 0.0
+        }
+
+        var distSq = errX * errX + errY * errY + errZ * errZ
+
+        if distSq > 400.0 {
+            // Hard-snap khi khoảng cách quá lớn (> 20m: respawn / reset)
+            OpponentRenderPos[pIndex] = serverPos
+            OpponentRenderRot[pIndex] = targetRot
+            OpponentVelocity[pIndex] = targetVel
+            OpponentTargetVel[pIndex] = targetVel
+            OpponentError[pIndex] = Vector3{0.0, 0.0, 0.0}
+            OpponentTargetRot[pIndex] = targetRot
+            if EnemyCars[pIndex] != nil {
+                EnemyCars[pIndex]<Transform>.Position = serverPos
+                EnemyCars[pIndex]<Transform>.RotationQ = targetRot
+            }
+        } else {
+            OpponentTargetVel[pIndex] = targetVel
+            OpponentTargetRot[pIndex] = targetRot
+            OpponentError[pIndex] = Vector3{errX, errY, errZ}
+        }
+    }
+
+    event OnUpdate() {
+        if !IsInited { return }
+        var p = thisEntity as entity<Player>
+        if p == nil || p != std.GetLocalPlayer() { return }
+        var isLobby = thisEntity<rm>.IsLobbyActive
+        var isCountingDown = thisEntity<rm>.RaceStartUiTimer > 0.0
+        var isGo = thisEntity<rm>.RaceGoUiTimer > 0.0
+        var isStarted = thisEntity<rm>.IsRaceStarted
+        var isFinished = thisEntity<rm>.CpIsRaceFinished
+        var finishHideUi = isFinished && ((thisEntity<rm>.FinishDecelDuration - thisEntity<rm>.FinishDecelTimer) >= 1.0)
+
+        // ==========================================
+        // RACE STOPWATCH TIMER & FINISH LERP ANIMATION
+        // ==========================================
+        if (RaceTimerWidget as entity) == nil && (MyControlUI as entity) != nil {
+            RaceTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/txt_timer")
+            if (RaceTimerWidget as entity) == nil {
+                RaceTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/txt_Timer")
+            }
+            if (RaceTimerWidget as entity) == nil {
+                RaceTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/txt_timer")
+            }
+            if (RaceTimerWidget as entity) != nil && !HasCachedTimerInitPos {
+                TimerInitPos = RaceTimerWidget<hud.UIWidget>.AnchorPosition
+                TimerInitSizeDelta = RaceTimerWidget<hud.UIWidget>.SizeDelta
+                TimerInitFontSize = RaceTimerWidget<UIWidgetLabel>.FontSize
+                if TimerInitFontSize <= 0 { TimerInitFontSize = 36 }
+                HasCachedTimerInitPos = true
+            }
+        }
+
+        if isLobby || isCountingDown {
+            RaceTimerRunning = false
+            RaceTimerFinished = false
+            CurrentRaceTimeMs = 0
+            FramesInCurrentSec = 0
+            TimerFinishLerpTimer = 0.0
+
+            // Ẩn khi đang ở phòng chờ hoặc đếm ngược 3-2-1
+            if (RaceTimerWidget as entity) != nil {
+                RaceTimerWidget<hud.UIWidget>.IsVisible = false
+                RaceTimerWidget<UIWidgetLabel>.Content = "00:00.000"
+                if HasCachedTimerInitPos {
+                    RaceTimerWidget<hud.UIWidget>.AnchorPosition = TimerInitPos
+                    RaceTimerWidget<hud.UIWidget>.SizeDelta = TimerInitSizeDelta
+                    RaceTimerWidget<UIWidgetLabel>.FontSize = TimerInitFontSize
+                }
+            }
+        } else if (isGo || isStarted) && !isFinished {
+            // Khi GO mới hiện trên UI cùng root
+            if (RaceTimerWidget as entity) != nil {
+                RaceTimerWidget<hud.UIWidget>.IsVisible = true
+                if HasCachedTimerInitPos {
+                    RaceTimerWidget<hud.UIWidget>.AnchorPosition = TimerInitPos
+                    RaceTimerWidget<hud.UIWidget>.SizeDelta = TimerInitSizeDelta
+                    RaceTimerWidget<UIWidgetLabel>.FontSize = TimerInitFontSize
+                }
+            }
+            TimerFinishLerpTimer = 0.0
+
+            if !RaceTimerRunning && !RaceTimerFinished {
+                RaceTimerRunning = true
+                RaceStartTimeSec = time.GetLocalTimestamp()
+                LastSecondTimestamp = RaceStartTimeSec
+                FramesInCurrentSec = 0
+                EstimatedFps = 60
+                CurrentRaceTimeMs = 0
+            }
+            if RaceTimerRunning {
+                var currentTimestamp = time.GetLocalTimestamp()
+                if currentTimestamp != LastSecondTimestamp {
+                    if FramesInCurrentSec >= 10 && FramesInCurrentSec <= 240 {
+                        EstimatedFps = FramesInCurrentSec
+                    }
+                    FramesInCurrentSec = 0
+                    LastSecondTimestamp = currentTimestamp
+                } else {
+                    FramesInCurrentSec += 1
+                }
+
+                var elapsedSec = currentTimestamp - RaceStartTimeSec
+                if elapsedSec < 0 { elapsedSec = 0 }
+
+                var subMs = (FramesInCurrentSec * 1000) / EstimatedFps
+                if subMs > 999 { subMs = 999 }
+                if subMs < 0 { subMs = 0 }
+
+                CurrentRaceTimeMs = elapsedSec * 1000 + subMs
+                if (RaceTimerWidget as entity) != nil {
+                    RaceTimerWidget<UIWidgetLabel>.Content = FormatTimeMs(CurrentRaceTimeMs)
+                }
+            }
+        } else if isFinished {
+            if RaceTimerRunning {
+                RaceTimerRunning = false
+                RaceTimerFinished = true
+                FinalRaceTimeMs = CurrentRaceTimeMs
+
+                // Cập nhật kỷ lục cá nhân tốt nhất (Best Record)
+                if BestRaceTimeMs <= 0 || FinalRaceTimeMs < BestRaceTimeMs {
+                    BestRaceTimeMs = FinalRaceTimeMs
+                }
+                LogInfo("[RaceTimer] 🏁 FINISH! Time: " + FormatTimeMs(FinalRaceTimeMs) + " | Best: " + FormatTimeMs(BestRaceTimeMs))
+            }
+
+            // KHI FINISH: Lerp mượt mà tọa độ về (0, 0) và phóng to (cũng lerp)
+            if (RaceTimerWidget as entity) != nil {
+                RaceTimerWidget<hud.UIWidget>.IsVisible = true
+                RaceTimerWidget<UIWidgetLabel>.Content = FormatTimeMs(FinalRaceTimeMs)
+
+                TimerFinishLerpTimer += 0.033
+                var t = TimerFinishLerpTimer / 1.0 // Thời gian lerp: 1.0 giây
+                if t > 1.0 { t = 1.0 }
+                // SmoothStep
+                var smoothT = t * t * (3.0 - 2.0 * t)
+
+                if HasCachedTimerInitPos {
+                    var curX = TimerInitPos.X + (0.0 - TimerInitPos.X) * smoothT
+                    var curY = TimerInitPos.Y + (TimerFinishTargetY - TimerInitPos.Y) * smoothT
+                    RaceTimerWidget<hud.UIWidget>.AnchorPosition = Vector3{curX, curY, 0.0}
+
+                    var curScale = 1.0 + 0.8 * smoothT // Phóng to 1.8x
+                    var curWidth = TimerInitSizeDelta.X * curScale
+                    if curWidth < 280.0 { curWidth = 280.0 }
+                    RaceTimerWidget<hud.UIWidget>.SizeDelta = Vector2{curWidth, TimerInitSizeDelta.Y * curScale}
+                    var curFontSize = math.Floor((TimerInitFontSize as float) * curScale) as int
+                    RaceTimerWidget<UIWidgetLabel>.FontSize = curFontSize
+                }
+            }
+
+            if (BestTimerWidget as entity) != nil && BestRaceTimeMs > 0 {
+                BestTimerWidget<UIWidgetLabel>.Content = FormatTimeMs(BestRaceTimeMs)
+            }
+        }
+
+        // Teleport DriveUIRoot về (0, 0, 0) CHỈ KHI GO! XUẤT HIỆN hoặc đang đua.
+        // Còn lúc phòng chờ, lúc đang đếm 3-2-1, hoặc sau khi cán đích 1s thì tele ra ngoài màn hình (9999, 9999, 0)
+        var shouldShowDriveUI = (isGo || isStarted) && !finishHideUi && !isLobby
+        if (DriveUIRootWidget as entity) != nil {
+            if shouldShowDriveUI {
+                DriveUIRootWidget<hud.UIWidget>.AnchorPosition = Vector3{0.0, 0.0, 0.0}
+            } else {
+                DriveUIRootWidget<hud.UIWidget>.AnchorPosition = Vector3{9999.0, 9999.0, 0.0}
+            }
+        }
+
+        // Countdown 3-2-1-GO (Hỗ trợ cả 4 ảnh Image hoặc Text Label)
+        var startTimer = thisEntity<rm>.RaceStartUiTimer
+        var goTimer = thisEntity<rm>.RaceGoUiTimer
+        
+        var hasImages = (Count3Image as entity) != nil || (CountGoImage as entity) != nil
+        if hasImages {
+            if goTimer > 0.0 {
+                // GO ZOOM TO HẾT MÀN HÌNH & MỜ DẦN RỒI BIẾN MẤT
+                var progress = 1.0 - (goTimer / 1.0)
+                if progress < 0.0 { progress = 0.0 }
+                if progress > 1.0 { progress = 1.0 }
+                
+                // Phóng to tràn màn hình (1.0x -> 4.5x)
+                var scale = 1.0 + progress * 3.5
+                // Mờ dần theo thời gian (1.0 -> 0.0)
+                var alpha = goTimer / 1.0
+                if alpha < 0.0 { alpha = 0.0 }
+                if alpha > 1.0 { alpha = 1.0 }
+                
+                if (CountGoImage as entity) != nil {
+                    CountGoImage<hud.UIWidget>.IsVisible = true
+                    CountGoImage<hud.UIWidget>.SizeDelta = Vector2{GoBaseSize.X * scale, GoBaseSize.Y * scale}
+                    CountGoImage<UIWidgetImage>.Alpha = alpha
+                }
+                if (Count3Image as entity) != nil { Count3Image<hud.UIWidget>.IsVisible = false }
+                if (Count2Image as entity) != nil { Count2Image<hud.UIWidget>.IsVisible = false }
+                if (Count1Image as entity) != nil { Count1Image<hud.UIWidget>.IsVisible = false }
+            } else if startTimer > 0.0 {
+                var stepBase = math.Floor(startTimer)
+                var stepFrac = startTimer - stepBase
+                // Hiệu ứng Pop nhấp nhô mượt mà cho 3, 2, 1 (nhảy từ 1.35x thu về 1.0x)
+                var popScale = 1.0 + stepFrac * 0.35
+                var curSize = Vector2{CountBaseSize.X * popScale, CountBaseSize.Y * popScale}
+                
+                if startTimer > 2.0 {
+                    // SỐ 3
+                    if (Count3Image as entity) != nil {
+                        Count3Image<hud.UIWidget>.IsVisible = true
+                        Count3Image<hud.UIWidget>.SizeDelta = curSize
+                        Count3Image<UIWidgetImage>.Alpha = 1.0
+                    }
+                    if (Count2Image as entity) != nil { Count2Image<hud.UIWidget>.IsVisible = false }
+                    if (Count1Image as entity) != nil { Count1Image<hud.UIWidget>.IsVisible = false }
+                    if (CountGoImage as entity) != nil { CountGoImage<hud.UIWidget>.IsVisible = false }
+                } else if startTimer > 1.0 {
+                    // SỐ 2
+                    if (Count2Image as entity) != nil {
+                        Count2Image<hud.UIWidget>.IsVisible = true
+                        Count2Image<hud.UIWidget>.SizeDelta = curSize
+                        Count2Image<UIWidgetImage>.Alpha = 1.0
+                    }
+                    if (Count3Image as entity) != nil { Count3Image<hud.UIWidget>.IsVisible = false }
+                    if (Count1Image as entity) != nil { Count1Image<hud.UIWidget>.IsVisible = false }
+                    if (CountGoImage as entity) != nil { CountGoImage<hud.UIWidget>.IsVisible = false }
+                } else {
+                    // SỐ 1
+                    if (Count1Image as entity) != nil {
+                        Count1Image<hud.UIWidget>.IsVisible = true
+                        Count1Image<hud.UIWidget>.SizeDelta = curSize
+                        Count1Image<UIWidgetImage>.Alpha = 1.0
+                    }
+                    if (Count3Image as entity) != nil { Count3Image<hud.UIWidget>.IsVisible = false }
+                    if (Count2Image as entity) != nil { Count2Image<hud.UIWidget>.IsVisible = false }
+                    if (CountGoImage as entity) != nil { CountGoImage<hud.UIWidget>.IsVisible = false }
+                }
+            } else {
+                // Ẩn tất cả khi vào trận
+                if (Count3Image as entity) != nil { Count3Image<hud.UIWidget>.IsVisible = false }
+                if (Count2Image as entity) != nil { Count2Image<hud.UIWidget>.IsVisible = false }
+                if (Count1Image as entity) != nil { Count1Image<hud.UIWidget>.IsVisible = false }
+                if (CountGoImage as entity) != nil { CountGoImage<hud.UIWidget>.IsVisible = false }
+            }
+        } else if (StartWidget as entity) != nil {
+            // Fallback Text Label nếu không có Image
+            if goTimer > 0.0 {
+                StartWidget<hud.UIWidget>.IsVisible = true
+                StartWidget<UIWidgetLabel>.Content = "GO!"
+                var goSize = 58.0 + goTimer * 45.0
+                var goFontSize = math.Floor(goSize) as int
+                StartWidget<UIWidgetLabel>.FontSize = goFontSize
+            } else if startTimer > 0.0 {
+                StartWidget<hud.UIWidget>.IsVisible = true
+                var countText = "1"
+                if startTimer > 2.0 {
+                    countText = "3"
+                } else if startTimer > 1.0 {
+                    countText = "2"
+                }
+                StartWidget<UIWidgetLabel>.Content = countText
+                var stepBase = math.Floor(startTimer)
+                var stepFrac = startTimer - stepBase
+                var countSize = 54.0 + stepFrac * 42.0
+                var countFontSize = math.Floor(countSize) as int
+                StartWidget<UIWidgetLabel>.FontSize = countFontSize
+            } else {
+                StartWidget<hud.UIWidget>.IsVisible = false
+            }
+        }
+
+        // =========================================================
+        // LERP CUỘN SỐ VÒNG ĐUA (LAP TICKER / SCROLL ANIMATION)
+        // 0 = Chưa GO (-50, -100, -150)
+        // 1 = Lap 1   (0, -50, -100)
+        // 2 = Lap 2   (50, 0, -50)
+        // 3 = Lap 3   (100, 50, 0)
+        // Finish: Giữ nguyên ở 3
+        // =========================================================
+        var isRaceActive = (thisEntity<rm>.RaceStartUiTimer <= 0.0)
+        var curLap = thisEntity<rm>.CpCurrentLap
+        var lapLevel = 0
+        if isRaceActive {
+            lapLevel = curLap
+            if lapLevel < 1 { lapLevel = 1 }
+            if lapLevel > 3 { lapLevel = 3 }
+        }
+
+        var tgtY1 = ((lapLevel - 1) as float) * 50.0
+        var tgtY2 = ((lapLevel - 2) as float) * 50.0
+        var tgtY3 = ((lapLevel - 3) as float) * 50.0
+
+        var lapLerp = 0.033 * 6.0
+        if lapLerp > 1.0 { lapLerp = 1.0 }
+
+        if (Lap1Image as entity) != nil {
+            var d1 = tgtY1 - Lap1CurrentY
+            if math.Abs(d1) > 0.01 {
+                Lap1CurrentY += d1 * lapLerp
+                var x1 = Lap1Image<hud.UIWidget>.AnchorPosition.X
+                Lap1Image<hud.UIWidget>.AnchorPosition = Vector3{x1, Lap1CurrentY, 0.0}
+            }
+            Lap1Image<hud.UIWidget>.IsVisible = true
+        }
+
+        if (Lap2Image as entity) != nil {
+            var d2 = tgtY2 - Lap2CurrentY
+            if math.Abs(d2) > 0.01 {
+                Lap2CurrentY += d2 * lapLerp
+                var x2 = Lap2Image<hud.UIWidget>.AnchorPosition.X
+                Lap2Image<hud.UIWidget>.AnchorPosition = Vector3{x2, Lap2CurrentY, 0.0}
+            }
+            Lap2Image<hud.UIWidget>.IsVisible = true
+        }
+
+        if (Lap3Image as entity) != nil {
+            var d3 = tgtY3 - Lap3CurrentY
+            if math.Abs(d3) > 0.01 {
+                Lap3CurrentY += d3 * lapLerp
+                var x3 = Lap3Image<hud.UIWidget>.AnchorPosition.X
+                Lap3Image<hud.UIWidget>.AnchorPosition = Vector3{x3, Lap3CurrentY, 0.0}
+            }
+            Lap3Image<hud.UIWidget>.IsVisible = true
+        }
+
+        if (NitroBar as entity) != nil {
+            var maxNitro = thisEntity<rm>.MaxNitroCharge
+            var targetFill = 0.0
+            if maxNitro > 0.0 {
+                targetFill = thisEntity<rm>.NitroCharge / maxNitro
+            }
+            if targetFill < 0.0 { targetFill = 0.0 }
+            if targetFill > 1.0 { targetFill = 1.0 }
+
+            // Fill đi nhanh, màu đi chậm hơn để tạo cảm giác được "sơn" dần từ trái sang phải.
+            NitroBarFillAmount += (targetFill - NitroBarFillAmount) * 0.22
+            NitroBarColorProgress += (targetFill - NitroBarColorProgress) * 0.075
+            NitroBar<UIWidgetImage>.FillAmount = NitroBarFillAmount
+
+            var colorPos = NitroBarColorProgress
+            var r = 40.0
+            var g = 155.0
+            var b = 255.0
+
+            if colorPos < 0.45 {
+                r = 40.0; g = 155.0; b = 255.0
+            } else if colorPos < 0.55 {
+                var blend = (colorPos - 0.45) / 0.10
+                r = 40.0 + (255.0 - 40.0) * blend
+                g = 155.0 + (220.0 - 155.0) * blend
+                b = 255.0 + (35.0 - 255.0) * blend
+            } else if colorPos < 0.75 {
+                r = 255.0; g = 220.0; b = 35.0
+            } else if colorPos < 0.85 {
+                var blend2 = (colorPos - 0.75) / 0.10
+                r = 255.0 + (180.0 - 255.0) * blend2
+                g = 220.0 + (70.0 - 220.0) * blend2
+                b = 35.0 + (255.0 - 35.0) * blend2
+            } else {
+                r = 180.0; g = 70.0; b = 255.0
+            }
+
+            NitroBar<UIWidgetImage>.Color = std.ColorRGB(255, 255, 255)
+            if (NitroGlowHead as entity) != nil {
+                if !HasCachedNitroBarPos {
+                    NitroBarStartPos = NitroBar<hud.UIWidget>.AnchorPosition
+                    var sz = NitroBar<hud.UIWidget>.SizeDelta
+                    NitroBarTotalWidth = sz.X
+                    if NitroBarTotalWidth <= 0.0 { NitroBarTotalWidth = 260.0 }
+                    HasCachedNitroBarPos = true
+                }
+                if NitroBarFillAmount > 0.01 {
+                    NitroGlowHead<hud.UIWidget>.IsVisible = true
+                    var currentHeadX = NitroBarStartPos.X + (NitroBarTotalWidth * NitroBarFillAmount)
+                    NitroGlowHead<hud.UIWidget>.AnchorPosition = Vector3{currentHeadX, NitroBarStartPos.Y, NitroBarStartPos.Z}
+                    NitroGlowHead<UIWidgetImage>.Color = std.ColorRGB(math.Floor(r) as int, math.Floor(g) as int, math.Floor(b) as int)
+                    NitroGlowHead<UIWidgetImage>.Alpha = 1.0
+                } else {
+                    NitroGlowHead<hud.UIWidget>.IsVisible = false
+                }
+            }
+            if targetFill >= 0.98 {
+                NitroBar<UIWidgetImage>.Alpha = 1.0
+            } else {
+                NitroBar<UIWidgetImage>.Alpha = 0.78
+            }
+        }
+
+        // Đồng hồ tốc độ bán nguyệt: xoay kim mượt mỗi frame theo dải 0 -> 300 km/h + rung lắc kịch kim
+        if (SpeedNeedle as entity) != nil {
+            var currentSpeed = thisEntity<rm>.UISpeedKmh
+            if currentSpeed < 0.0 { currentSpeed = 0.0 }
+            var maxGaugeSpeed = 300.0
+            var speedRatio = currentSpeed / maxGaugeSpeed
+            if speedRatio > 1.0 { speedRatio = 1.0 }
+            
+            // 0 km/h = 120 độ (dưới trái), 150 km/h ≈ 0 độ, 300 km/h = -122 độ / 238 độ (dưới phải)
+            var targetAngle = 120.0 - (speedRatio * 242.0)
+            SpeedNeedleAngle += (targetAngle - SpeedNeedleAngle) * 0.25
+            
+            // Rung nhẹ khi kịch kim: chỉ bắt đầu từ 300 km/h, dao động nhỏ quanh mốc 300
+            var finalAngle = SpeedNeedleAngle
+            if currentSpeed >= 300.0 {
+                NeedleShakeTime += 0.4
+                if NeedleShakeTime > 6.28 { NeedleShakeTime -= 6.28 }
+                var shakeOffset = math.Sin(NeedleShakeTime * 6.0) * 2.2
+                finalAngle = -124.0 + shakeOffset
+            }
+            
+            SpeedNeedle<hud.UIWidget>.Angle = finalAngle
+        }
+
+        UpdateCounter += 1
+
+        // Cập nhật UI mỗi 6 logic frames (~10 lần/giây) để tiết kiệm hiệu năng
+        if UpdateCounter >= 6 {
+            UpdateCounter = 0
+            
+            // Cập nhật Text Đếm ngược phòng chờ
+            var sec = thisEntity<rm>.LobbyTimerSec
+            var lobbyStr = "TRẬN ĐẤU BẮT ĐẦU SAU: " + convert.NumToString(sec as float, "0") + "s"
+            if sec <= 5 {
+                lobbyStr = "CHUẨN BỊ XUẤT PHÁT: " + convert.NumToString(sec as float, "0") + "s"
+            }
+
+            if (LobbyTimerWidget as entity) != nil {
+                if isLobby {
+                    LobbyTimerWidget<hud.UIWidget>.IsVisible = true
+                    LobbyTimerWidget<UIWidgetLabel>.Content = lobbyStr
+                } else {
+                    LobbyTimerWidget<hud.UIWidget>.IsVisible = false
+                }
+            } else if (StartWidget as entity) != nil {
+                if isLobby {
+                    StartWidget<hud.UIWidget>.IsVisible = true
+                    StartWidget<UIWidgetLabel>.Content = lobbyStr
+                    StartWidget<UIWidgetLabel>.FontSize = 38
+                }
+            }
+
+            // Cập nhật Tốc độ
+            if (CurrentSpeedKmhText as entity) != nil {
+                LastSpeedKmh = thisEntity<rm>.UISpeedKmh
+                var uiSpeedKmh = math.Floor(LastSpeedKmh + 0.5) as float
+                CurrentSpeedKmhText<UIWidgetLabel>.Content = convert.NumToString(uiSpeedKmh, "0") + " kmm/h"
+            } 
+
+            // Cập nhật Text Vòng đua
+            curLap = thisEntity<rm>.CpCurrentLap
+
+            if (LapText as entity) != nil {
+                var lapStr = "LAP " + convert.NumToString(curLap as float, "0") + "/" + convert.NumToString(thisEntity<rm>.CpTotalLaps as float, "0")
+                LapText<UIWidgetLabel>.Content = lapStr
+            }
+            if (TestLap1Widget as entity) != nil {
+                TestLap1Widget<hud.UIWidget>.IsVisible = true
+                var pLocal = thisEntity as entity<Player>
+                if pLocal != nil {
+                    TestLap1Widget<UIWidgetLabel>.Content = pLocal<Player>.UserUID
+                }
+            }
+
+            // Cập nhật Thứ hạng
+            if (PositionText as entity) != nil {
+                var posStr = KartCheckpoint.BuildPositionText(thisEntity<rm>.CpPosition, thisEntity<rm>.CpIsRaceFinished)
+                PositionText<UIWidgetLabel>.Content = posStr
+            }
+            
+            // Hiển widget Finish khi hoàn thành
+            if (FinishWidget as entity) != nil {
+                if thisEntity<rm>.CpIsRaceFinished {
+                    FinishWidget<hud.UIWidget>.IsVisible = true
+                    FinishWidget<UIWidgetLabel>.Content = "FINISH #" + convert.NumToString(thisEntity<rm>.CpFinishPosition as float, "0")
+                }
+            }
+            if (DirectionArrow as entity) != nil {
+                DirectionArrow<hud.UIWidget>.IsVisible = true
+                var wpTotal = thisEntity<rm>.WpTotalWaypoints
+                if wpTotal >= 2 && thisEntity<rm>.WpX != nil {
+                    var carPos = thisEntity<rm>.UIKartPos
+                    var kartYaw = thisEntity<rm>.UIKartYaw
+                    var nearestWp = 0
+                    var bestDistSq = 999999999.0
+                    for i = 0, wpTotal, 1 {
+                        var ndx = carPos.X - thisEntity<rm>.WpX[i]
+                        var ndz = carPos.Z - thisEntity<rm>.WpZ[i]
+                        var dSq = ndx * ndx + ndz * ndz
+                        if dSq < bestDistSq {
+                            bestDistSq = dSq
+                            nearestWp = i
+                        }
+                    }
+                    var targetWp = nearestWp + 3
+                    while targetWp >= wpTotal { targetWp -= wpTotal }
+                    var dx = thisEntity<rm>.WpX[targetWp] - carPos.X
+                    var dz = thisEntity<rm>.WpZ[targetWp] - carPos.Z
+                    var targetYaw = math.ATan2(dx, dz)
+                    var relativeYaw = targetYaw - kartYaw
+                    while relativeYaw > 180.0 { relativeYaw -= 360.0 }
+                    while relativeYaw < -180.0 { relativeYaw += 360.0 }
+                    var absRelativeYaw = relativeYaw
+                    if absRelativeYaw < 0.0 { absRelativeYaw = -absRelativeYaw }
+                    if absRelativeYaw >= WrongWayUiAngle && thisEntity<rm>.UISpeedKmh > 25.0 {
+                        WrongWayUiTimer += 0.2
+                    } else {
+                        WrongWayUiTimer -= 0.4
+                        if WrongWayUiTimer < 0.0 { WrongWayUiTimer = 0.0 }
+                    }
+                    var targetAngle = -relativeYaw
+                    var diff = targetAngle - DirectionArrowAngle
+                    while diff > 180.0 { diff -= 360.0 }
+                    while diff < -180.0 { diff += 360.0 }
+                    DirectionArrowAngle += diff * 0.18
+                    while DirectionArrowAngle > 180.0 { DirectionArrowAngle -= 360.0 }
+                    while DirectionArrowAngle < -180.0 { DirectionArrowAngle += 360.0 }
+                    DirectionArrow<hud.UIWidget>.Angle = DirectionArrowAngle
+                } else {
+                    WrongWayUiTimer = 0.0
+                    DirectionArrow<hud.UIWidget>.Angle = DirectionArrowAngle
+                }
+            }
+            if (WrongWayWidget as entity) != nil {
+                WrongWayWidget<hud.UIWidget>.IsVisible = WrongWayUiTimer >= WrongWayUiThreshold
+            }
+        }
+
+        // =========================================================
+        // ROTATING MINIMAP: BẢN ĐỒ XOAY THEO HƯỚNG XE
+        // =========================================================
+        if (MiniMap as entity) != nil && (thisEntity<rm> as entity) != nil {
+            var carPos = thisEntity<rm>.UIKartPos
+            var kartYaw = thisEntity<rm>.UIKartYaw
+            var mapAngle = kartYaw
+
+            var cosA = math.Cos(mapAngle)
+            var sinA = math.Sin(mapAngle)
+
+            var carMapX = carPos.X * MinimapScaleX + MinimapOffsetX
+            var carMapY = carPos.Z * MinimapScaleY + MinimapOffsetY
+
+            var rotX = carMapX * cosA - carMapY * sinA
+            var rotY = carMapX * sinA + carMapY * cosA
+
+            MiniMap<hud.UIWidget>.Angle = mapAngle
+            MiniMap<hud.UIWidget>.AnchorPosition = Vector3{-rotX, -rotY, 0.0}
+            MiniMap<hud.UIWidget>.IsVisible = true
+        }
+
+        // CHẤM CỦA BẠN (CỐ ĐỊNH Ở CHÍNH GIỮA TÂM MINIMAP)
+        if (CurrentPlayerDot as entity) != nil {
+            CurrentPlayerDot<hud.UIWidget>.AnchorPosition = Vector3{0.0, 0.0, 0.0}
+            CurrentPlayerDot<hud.UIWidget>.Angle = 0.0
+            CurrentPlayerDot<hud.UIWidget>.IsVisible = true
+        }
+
+        // ============================================================
+        // OPPONENT CONTINUOUS KINEMATIC + ERROR SMOOTHING (Rocket League / Unreal Style)
+        // ============================================================
+        var curOpTs = time.GetLocalTimestamp()
+        var opDt = 0.016
+        if LastOpUpdateTimestamp > 0 {
+            var diffDt = (curOpTs - LastOpUpdateTimestamp) as float / 1000.0
+            if diffDt >= 0.005 && diffDt <= 0.100 {
+                opDt = diffDt
+            }
+        }
+        LastOpUpdateTimestamp = curOpTs
+
+        var activePlayers = std.GetAllPlayers()
+        var activePCount = list.Length(activePlayers as List<object>)
+
+        if EnemyCars != nil && OpponentInited != nil && OpponentVelocity != nil && OpponentError != nil {
+            for oI = 0, 8, 1 {
+                if OpponentInited[oI] {
+                    var oCar = EnemyCars[oI]
+                    if (oCar as entity) != nil {
+                        var isQuit = false
+                        if OpponentIsQuit != nil && OpponentIsQuit[oI] {
+                            isQuit = true
+                        }
+
+                        // Kiểm tra UID đối thủ còn trong phòng hay đã out hẳn
+                        if !isQuit && OpponentUID != nil {
+                            var opUid = OpponentUID[oI]
+                            if opUid != "" {
+                                var stillInRoom = false
+                                for pCheckI = 0, activePCount, 1 {
+                                    var pEnt = activePlayers[pCheckI] as entity<Player>
+                                    if pEnt != nil && pEnt<Player>.UserUID == opUid {
+                                        stillInRoom = true
+                                        break
+                                    }
+                                }
+                                if !stillInRoom {
+                                    isQuit = true
+                                    if OpponentIsQuit != nil {
+                                        OpponentIsQuit[oI] = true
+                                    }
+                                }
+                            }
+                        }
+
+                        var idleTime = 0.0
+                        if OpponentPacketIdleTimer != nil {
+                            OpponentPacketIdleTimer[oI] += opDt
+                            idleTime = OpponentPacketIdleTimer[oI]
+                        }
+
+                        // Không nhận được packet > 0.10s HOẶC đối thủ đã out game:
+                        // Dừng cứng xe hoàn toàn tại vị trí cuối cùng, triệt tiêu 100% vận tốc, không trôi xuyên vật thể nữa!
+                        if isQuit || idleTime > 0.10 {
+                            OpponentVelocity[oI] = Vector3{0.0, 0.0, 0.0}
+                            OpponentTargetVel[oI] = Vector3{0.0, 0.0, 0.0}
+                            OpponentError[oI] = Vector3{0.0, 0.0, 0.0}
+                            oCar<Transform>.Position = OpponentRenderPos[oI]
+                            oCar<Transform>.RotationQ = OpponentRenderRot[oI]
+                            continue
+                        }
+
+                        // Trễ gói tin > 0.05s: hãm tốc độ nhanh về 0 tránh trôi xe quán tính
+                        if idleTime > 0.05 {
+                            OpponentTargetVel[oI] = Vector3{0.0, 0.0, 0.0}
+                            var curV = OpponentVelocity[oI]
+                            OpponentVelocity[oI] = Vector3{curV.X * 0.5, 0.0, curV.Z * 0.5}
+                        }
+
+                        // 1. Hòa nhập vận tốc liên tục
+                        var curVel = OpponentVelocity[oI]
+                        var tgtVel = OpponentTargetVel[oI]
+                        var nVx = curVel.X + (tgtVel.X - curVel.X) * 0.45
+                        var nVz = curVel.Z + (tgtVel.Z - curVel.Z) * 0.45
+                        curVel = Vector3{nVx, 0.0, nVz}
+                        OpponentVelocity[oI] = curVel
+
+                        // 2. Tịnh tiến động học liên tục (Kinematic motion 60fps - Xe luôn lăn bánh không bao giờ giật)
+                        var curPos = OpponentRenderPos[oI]
+                        var nPx = curPos.X + curVel.X * opDt
+                        var nPy = curPos.Y + curVel.Y * opDt
+                        var nPz = curPos.Z + curVel.Z * opDt
+                        curPos = Vector3{nPx, nPy, nPz}
+
+                        // 3. Hấp thụ sai lệch vị trí (Error Offset) êm ái mỗi frame
+                        var err = OpponentError[oI]
+                        var corrFactor = 0.30
+                        var corrX = err.X * corrFactor
+                        var corrY = err.Y * corrFactor
+                        var corrZ = err.Z * corrFactor
+
+                        curPos = Vector3{curPos.X + corrX, curPos.Y + corrY, curPos.Z + corrZ}
+                        OpponentError[oI] = Vector3{err.X - corrX, err.Y - corrY, err.Z - corrZ}
+                        OpponentRenderPos[oI] = curPos
+
+                        // 4. Xoay hướng mượt mà theo góc yaw
+                        var curRot = OpponentRenderRot[oI]
+                        curRot = math.SlerpQuaternion(curRot, OpponentTargetRot[oI], 0.35)
+                        OpponentRenderRot[oI] = curRot
+
+                        // 5. Áp dụng lên mô hình xe
+                        oCar<Transform>.Position = curPos
+                        oCar<Transform>.RotationQ = curRot
+                    }
+                }
+            }
+        }
+
+        // ENEMY DOTS: Cập nhật vị trí tương đối trên MiniMap (Tự động xoay & di chuyển theo MiniMap)
+        if (PlayerDot as entity) != nil && EnemyCars != nil && EnemyDots != nil {
+            var carCount = list.Length(EnemyCars as List<object>)
+            for i = 0, carCount, 1 {
+                var enemyCar = EnemyCars[i]
+                var dot = EnemyDots[i]
+                if (enemyCar as entity) != nil {
+                    if (dot as entity) == nil {
+                        std.Clone(out var clonedDot, PlayerDot as entity)
+                        if clonedDot != nil {
+                            dot = clonedDot as entity<UIWidget>
+                            EnemyDots[i] = dot
+                        }
+                    }
+                    if (dot as entity) != nil {
+                        var isEnemyQuit = false
+                        if OpponentIsQuit != nil && i < list.Length(OpponentIsQuit as List<object>) && OpponentIsQuit[i] {
+                            isEnemyQuit = true
+                        }
+                        if isEnemyQuit {
+                            dot<hud.UIWidget>.IsVisible = false
+                        } else {
+                            var cPos = enemyCar<Transform>.Position
+                            var ex = cPos.X * MinimapScaleX + MinimapOffsetX
+                            var ey = cPos.Z * MinimapScaleY + MinimapOffsetY
+                            dot<hud.UIWidget>.AnchorPosition = Vector3{ex, ey, 0.0}
+                            dot<hud.UIWidget>.IsVisible = true
+                        }
+                    }
+                } else {
+                    if (dot as entity) != nil {
+                        dot<hud.UIWidget>.IsVisible = false
+                    }
+                }
+            }
+        }
+
+        // =========================================================
+        // REAL-TIME LEADERBOARD RANKING (/DriveUIRoot/Ranking/info) — CẬP NHẬT MỖI 1.0 GIÂY
+        // =========================================================
+        RankingIntervalTimer += 0.033
+        if RankingIntervalTimer >= 1.0 {
+            RankingIntervalTimer = 0.0
+
+            if RankingWidgets != nil {
+                var allP = std.GetAllPlayers()
+                var pTotal = list.Length(allP as List<object>)
+                var wCount = list.Length(RankingWidgets as List<object>)
+                if pTotal > wCount { pTotal = wCount }
+                if pTotal > 8 { pTotal = 8 }
+
+                var sortedPlayers = list.New(0, 8)
+                var playerScores = list.New(0, 8)
+
+                for i = 0, pTotal, 1 {
+                    var pEnt = allP[i] as entity<Player>
+                    if pEnt != nil {
+                        var score = 0.0
+                        if pEnt == std.GetLocalPlayer() && (thisEntity<rm> as entity) != nil {
+                            score = (thisEntity<rm>.CpCurrentLap as float) * 10000.0 + (10.0 - (thisEntity<rm>.CpPosition as float))
+                            if thisEntity<rm>.CpIsRaceFinished {
+                                score = score + 1000000.0 - (thisEntity<rm>.CpFinishPosition as float) * 1000.0
+                            }
+                        } else {
+                            score = 100.0 - (i as float)
+                        }
+                        list.Append(sortedPlayers, pEnt as entity<Entity>)
+                        list.Append(playerScores, score)
+                    }
+                }
+
+                // Sắp xếp Bubble Sort: Điểm cao hơn đứng trước
+                var sCount = list.Length(sortedPlayers as List<object>)
+                for a = 0, sCount, 1 {
+                    for b = a + 1, sCount, 1 {
+                        var scoreA = playerScores[a] as float
+                        var scoreB = playerScores[b] as float
+                        if scoreB > scoreA {
+                            playerScores[a] = scoreB
+                            playerScores[b] = scoreA
+                            var tempP = sortedPlayers[a]
+                            sortedPlayers[a] = sortedPlayers[b]
+                            sortedPlayers[b] = tempP
+                        }
+                    }
+                }
+
+                // 3. Dịch chuyển trục Y (-60px mỗi bậc)
+                for i = 0, pTotal, 1 {
+                    var pEnt = allP[i] as entity<Player>
+                    var wSlot = RankingWidgets[i] as entity<UIWidget>
+                    
+                    if (wSlot as entity) != nil && pEnt != nil {
+                        var rankIndex = 0
+                        for r = 0, sCount, 1 {
+                            if sortedPlayers[r] == pEnt {
+                                rankIndex = r
+                                break
+                            }
+                        }
+                        var targetY = RankBaseY - (rankIndex as float) * 60.0
+                        wSlot<hud.UIWidget>.AnchorPosition = Vector3{RankBaseX, targetY, 0.0}
+                        wSlot<hud.UIWidget>.IsVisible = true
+                    }  
+                }
+            }
+        }
+    }
+
+    // Nhận reference xe đối thủ từ Server
+    event HideMyLocalProxy(car entity<Entity>) {
+        if (car as entity) == nil { return }
+        if EnemyCars == nil {
+            EnemyCars = list.New(0, 8)
+        }
+        var count = list.Length(EnemyCars as List<object>)
+        var exists = false
+        for i = 0, count, 1 {
+            if EnemyCars[i] == car {
+                exists = true
+                break
+            }
+        }
+        if !exists && count < 8 {
+            list.Append(EnemyCars, car)
+        }
+    }
+
+    event ShowNitroButtonServer() {
+        var p = thisEntity as entity<Player>
+        if p != std.GetLocalPlayer() { return }
+        
+        if (MyControlUI as entity) != nil {
+            var btn = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/BoostButton")
+            if (btn as entity) != nil { 
+                btn<hud.UIWidget>.IsVisible = true 
+            }
+        }
+    }
+
+    event HideNitroButtonServer() {
+        var p = thisEntity as entity<Player>
+        if p != std.GetLocalPlayer() { return }
+        
+        if (MyControlUI as entity) != nil {
+            var btn = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/BoostButton")
+            if (btn as entity) != nil { 
+                btn<hud.UIWidget>.IsVisible = false 
+            }
+        }
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

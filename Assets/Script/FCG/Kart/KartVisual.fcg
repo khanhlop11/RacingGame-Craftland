@@ -1,0 +1,154 @@
+import "StdLibrary.fcc" as std
+import "List.fcc" as list
+import "Strings.fcc" as strings
+import "Math.fcc" as math
+
+// ============================================================
+// KartVisual.fcg
+// Visual-only helper subsystem for RacingMovement.
+// Keep gameplay physics/timing owned by RacingMovement.
+// ============================================================
+[platform_client]
+static graph KartVisual {
+
+    func InitSkidSensors(node entity<Entity>, skidSensors List<entity<Entity>>, skidLines List<object>, skidPoints List<object>) {
+        if node == nil { return }
+
+        var children = std.GetChildren(node)
+        var count = list.Length(children as List<object>)
+        for i = 0, count, 1 {
+            var child = children[i] as entity<Entity>
+            if child != nil {
+                if child<Entity>.Name == "Skid" {
+                    list.Append(skidSensors as List<object>, child as object)
+                    list.Append(skidLines, nil)
+                    list.Append(skidPoints, list.New(0, 50) as object)
+                }
+                InitSkidSensors(child, skidSensors, skidLines, skidPoints)
+            }
+        }
+    }
+
+    func ScanWheelNodes(node entity<Entity>, steeringNodes List<entity<Entity>>, wheelNodes List<entity<Entity>>, initSteerRot List<object>, initWheelRot List<object>) {
+        if node == nil { return }
+        var children = std.GetChildren(node)
+        var count = list.Length(children as List<object>)
+        for i = 0, count, 1 {
+            var child = children[i] as entity<Entity>
+            if child != nil {
+                var childName = child<Entity>.Name
+                if strings.Find(childName, "Steering", 0) >= 0 {
+                    list.Append(steeringNodes as List<object>, child as object)
+                    list.Append(initSteerRot, child<Transform>.LocalRotationQ as object)
+                } else if strings.Find(childName, "Wheel", 0) >= 0 {
+                    list.Append(wheelNodes as List<object>, child as object)
+                    list.Append(initWheelRot, child<Transform>.LocalRotationQ as object)
+                }
+                ScanWheelNodes(child, steeringNodes, wheelNodes, initSteerRot, initWheelRot)
+            }
+        }
+    }
+
+    func AttachVisualCarToKart(clientVisualCar entity<Entity>, kartModel entity<Entity>, momentNode entity<Entity>) {
+        if clientVisualCar == nil || kartModel == nil { return }
+        var spawnPos = kartModel<Transform>.Position
+        clientVisualCar<Transform>.Position = Vector3{spawnPos.X, spawnPos.Y - 0.80, spawnPos.Z}
+        clientVisualCar<Transform>.Parent = kartModel as entity<Transform>
+        clientVisualCar<Transform>.LocalPosition = Vector3{0.0, -0.5, 0.0}
+        clientVisualCar<Transform>.LocalRotation = Vector3{0.0, 0.0, 0.0}
+        if momentNode != nil { momentNode<Transform>.LocalRotation = Vector3{0.0, 0.0, 0.0} }
+    }
+
+    func ScanEffects(node entity<Entity>, nitroEffects List<entity<Entity>>, driftEffects List<entity<Entity>>, scrapeEffectsL List<entity<Entity>>, scrapeEffectsR List<entity<Entity>>) {
+        if node == nil { return }
+        var children = std.GetChildren(node)
+        var count = list.Length(children as List<object>)
+        for i = 0, count, 1 {
+            var child = children[i] as entity<Entity>
+            if child != nil {
+                var cName = child<Entity>.Name
+                if strings.Find(cName, "NitroEffect", 0) >= 0 {
+                    list.Append(nitroEffects as List<object>, child as object)
+                    std.SetActive(child as entity, false)
+                } else if strings.Find(cName, "DriftEffect", 0) >= 0 {
+                    list.Append(driftEffects as List<object>, child as object)
+                    std.SetActive(child as entity, false)
+                } else if strings.Find(cName, "ScrapeEffect_L", 0) >= 0 || strings.Find(cName, "ScrapeEffectL", 0) >= 0 {
+                    if scrapeEffectsL != nil {
+                        list.Append(scrapeEffectsL as List<object>, child as object)
+                        std.SetActive(child as entity, false)
+                    }
+                } else if strings.Find(cName, "ScrapeEffect_R", 0) >= 0 || strings.Find(cName, "ScrapeEffectR", 0) >= 0 {
+                    if scrapeEffectsR != nil {
+                        list.Append(scrapeEffectsR as List<object>, child as object)
+                        std.SetActive(child as entity, false)
+                    }
+                } else if strings.Find(cName, "ScrapeEffect", 0) >= 0 {
+                    if scrapeEffectsL != nil { list.Append(scrapeEffectsL as List<object>, child as object) }
+                    if scrapeEffectsR != nil { list.Append(scrapeEffectsR as List<object>, child as object) }
+                    std.SetActive(child as entity, false)
+                }
+                ScanEffects(child, nitroEffects, driftEffects, scrapeEffectsL, scrapeEffectsR)
+            }
+        }
+    }
+
+    func SyncNitroEffects(nitroEffects List<entity<Entity>>, isBoosting bool) {
+        if nitroEffects == nil { return }
+        var nCount = list.Length(nitroEffects as List<object>)
+        for i = 0, nCount, 1 {
+            var ef = nitroEffects[i] as entity<Entity>
+            if ef != nil { std.SetActive(ef as entity, isBoosting) }
+        }
+    }
+
+    func SyncDriftEffects(driftEffects List<entity<Entity>>, isDrift bool) {
+        if driftEffects == nil { return }
+        var dCount = list.Length(driftEffects as List<object>)
+        for i = 0, dCount, 1 {
+            var ef = driftEffects[i] as entity<Entity>
+            if ef != nil { std.SetActive(ef as entity, isDrift) }
+        }
+    }
+
+    func SyncScrapeEffects(scrapeEffectsL List<entity<Entity>>, scrapeEffectsR List<entity<Entity>>, isScrapingLeft bool, isScrapingRight bool) {
+        if scrapeEffectsL != nil {
+            var lCount = list.Length(scrapeEffectsL as List<object>)
+            for i = 0, lCount, 1 {
+                var efL = scrapeEffectsL[i] as entity<Entity>
+                if efL != nil { std.SetActive(efL as entity, isScrapingLeft) }
+            }
+        }
+        if scrapeEffectsR != nil {
+            var rCount = list.Length(scrapeEffectsR as List<object>)
+            for j = 0, rCount, 1 {
+                var efR = scrapeEffectsR[j] as entity<Entity>
+                if efR != nil { std.SetActive(efR as entity, isScrapingRight) }
+            }
+        }
+    }
+
+    func ApplySteeringWheelVisuals(steeringNodes List<entity<Entity>>, initSteerRot List<object>, currentSteerAngle float) {
+        var snCount = list.Length(steeringNodes as List<object>)
+        for i = 0, snCount, 1 {
+            var sNode = steeringNodes[i] as entity<Entity>
+            if sNode != nil {
+                var initQ = initSteerRot[i] as Quaternion
+                var deltaQ = math.AxisAngleToQuaternion(Vector3{0.0, 0.0, 1.0}, currentSteerAngle)
+                sNode<Transform>.LocalRotationQ = math.MultiplyQuaternion(deltaQ, initQ)
+            }
+        }
+    }
+
+    func ApplyWheelRollVisuals(wheelNodes List<entity<Entity>>, initWheelRot List<object>, currentRollAngle float) {
+        var wnCount = list.Length(wheelNodes as List<object>)
+        for i = 0, wnCount, 1 {
+            var wNode = wheelNodes[i] as entity<Entity>
+            if wNode != nil {
+                var initQ = initWheelRot[i] as Quaternion
+                var deltaQ = math.AxisAngleToQuaternion(Vector3{1.0, 0.0, 0.0}, currentRollAngle)
+                wNode<Transform>.LocalRotationQ = math.MultiplyQuaternion(deltaQ, initQ)
+            }
+        }
+    }
+}

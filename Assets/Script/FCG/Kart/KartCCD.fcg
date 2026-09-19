@@ -1,0 +1,112 @@
+// Progress Note: Fixed syntax error (duplicate code block in ApplyHardWallStop)
+import "Math.fcc" as math
+
+[platform_client]
+static graph KartCCD {
+
+    func CalcCcdProbeDist(velX float, velY float, velZ float, dt float, minDist float, safetyMult float) float {
+        var speedMag = math.Sqrt(velX * velX + velY * velY + velZ * velZ)
+        var dynamicDist = speedMag * dt * safetyMult
+        if dynamicDist < minDist { dynamicDist = minDist }
+        return dynamicDist as float
+    }
+
+    func ShouldReconcile(hitDist float, velMag float, dt float, travelMult float) bool {
+        var frameTravelDist = velMag * dt * travelMult
+        if frameTravelDist < 2.0 { frameTravelDist = 2.0 }
+        return (hitDist < frameTravelDist) as bool
+    }
+
+    func CalcMovementSqrMagnitude(fromPos Vector3, toPos Vector3) float {
+        var dx = toPos.X - fromPos.X
+        var dy = toPos.Y - fromPos.Y
+        var dz = toPos.Z - fromPos.Z
+        return (dx * dx + dy * dy + dz * dz) as float
+    }
+
+    func ShouldSweepByMovement(moveSqrMag float, minExtent float) bool {
+        return (moveSqrMag > minExtent * minExtent) as bool
+    }
+
+    func CalcMovementMagnitude(moveSqrMag float) float {
+        return math.Sqrt(moveSqrMag) as float
+    }
+
+    func CalcSweepDirection(fromPos Vector3, toPos Vector3, moveMag float) Vector3 {
+        if moveMag < 0.001 { return Vector3{0.0, 0.0, 0.0} }
+        return Vector3{(toPos.X - fromPos.X) / moveMag, (toPos.Y - fromPos.Y) / moveMag, (toPos.Z - fromPos.Z) / moveMag}
+    }
+
+    func CalcSweepSafePosition(hitPos Vector3, sweepDir Vector3, partialExtent float) Vector3 {
+        return Vector3{hitPos.X - sweepDir.X * partialExtent, hitPos.Y - sweepDir.Y * partialExtent, hitPos.Z - sweepDir.Z * partialExtent}
+    }
+
+    func CalcSafePosition(hitPosX float, hitPosY float, hitPosZ float, hitNormX float, hitNormY float, hitNormZ float, radius float) Vector3 {
+        return Vector3{hitPosX + hitNormX * radius, hitPosY + hitNormY * radius, hitPosZ + hitNormZ * radius}
+    }
+
+    func CalcDeflectedVelocity(velX float, velY float, velZ float, normX float, normY float, normZ float) Vector3 {
+        var vDotN = velX * normX + velY * normY + velZ * normZ
+        // Only remove velocity INTO the wall (vDotN < 0), not away from it
+        if vDotN >= 0.0 {
+            return Vector3{velX, velY, velZ}
+        }
+        return Vector3{velX - vDotN * normX, velY - vDotN * normY, velZ - vDotN * normZ}
+    }
+
+    func ApplyWallFriction(vel Vector3, normalY float, friction float) Vector3 {
+        var wallFactor = 1.0 - normalY
+        if wallFactor < 0.0 { wallFactor = 0.0 }
+        if wallFactor > 1.0 { wallFactor = 1.0 }
+        var keep = 1.0 - friction * wallFactor
+        if keep < 0.0 { keep = 0.0 }
+        return Vector3{vel.X * keep, vel.Y, vel.Z * keep}
+    }
+
+    func ApplyFenceCollisionVelocity(vel Vector3, normX float, normY float, normZ float, maxWallNormalY float, pushSpeed float) Vector3 {
+        if normY > maxWallNormalY {
+            return vel
+        }
+        return Vector3{normX * pushSpeed, vel.Y, normZ * pushSpeed}
+    }
+
+    func ApplyFenceCollisionSpeedLoss(forwardSpeed float, lossSpeed float) float {
+        if forwardSpeed > lossSpeed {
+            return forwardSpeed - lossSpeed
+        }
+        if forwardSpeed < -lossSpeed {
+            return forwardSpeed + lossSpeed
+        }
+        return 0.0
+    }
+
+    func CalcDeflectedSpeedRatio(oldVelX float, oldVelY float, oldVelZ float, newVelX float, newVelY float, newVelZ float) float {
+        var oldMag = math.Sqrt(oldVelX * oldVelX + oldVelY * oldVelY + oldVelZ * oldVelZ)
+        if oldMag < 0.001 { return 0.0 }
+        var newMag = math.Sqrt(newVelX * newVelX + newVelY * newVelY + newVelZ * newVelZ)
+        var ratio = newMag / oldMag
+        if ratio > 1.0 { ratio = 1.0 }
+        return ratio as float
+    }
+
+    func IsWallNormal(normalY float, threshold float) bool {
+        return (normalY < threshold) as bool
+    }
+
+    func ApplyAngleBasedDamping(vel Vector3, forwardX float, forwardZ float, normX float, normZ float) Vector3 {
+        // Calculate angle between car forward direction and wall normal in XZ plane
+        var fwdDotNorm = forwardX * normX + forwardZ * normZ
+        var angle = math.Abs(fwdDotNorm)  // 0 = parallel, 1 = perpendicular
+        
+        // Apply strong damping for glancing blows (angled collisions ~30-60 degrees)
+        var dampingFactor = 1.0
+        if angle > 0.3 && angle < 0.9 {
+            // Glancing blow at angle - reduce velocity significantly to prevent sliding
+            dampingFactor = 0.3  // Keep only 30% of velocity for angled hits
+        }
+        
+        return Vector3{vel.X * dampingFactor, vel.Y, vel.Z * dampingFactor}
+    }
+}
+
+

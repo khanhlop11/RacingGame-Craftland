@@ -1,0 +1,334 @@
+import "Math.fcc" as math
+import "StdLibrary.fcc" as std
+import "EditorGenLib.fcc" as EditorGenLib
+import "List.fcc" as list
+import "Convert.fcc" as convert
+import "Hud.fcc" as hud
+
+// ============================================================
+// RacingMovementServer.fcg
+// Nhận vị trí/rotation từ client mỗi 0.05s
+// Relay tọa độ đối thủ xuống các máy khách khác
+// Gắn script này lên cùng entity Player với RacingMovement
+// ============================================================
+[platform_server]
+graph RacingMovementServer {
+
+    // Event declaration to send the assigned layer to the Client
+    event SetupCameraLayerClient(layerToHide int) {}
+    event HideMyLocalProxy(car entity<Entity>) {}
+    event SyncOpponentClient(pIndex int, carIndex int, posX float, posY float, posZ float, yaw float, velX float, velZ float, isDrifting int, senderUid string) {}
+    
+    // Event rỗng để Engine nhận diện khi Dispatch xuống Client
+    event onRaceCommand(cmdType int) {}
+
+    // Prefab Registry
+    CarPrefabList   List<object> = nil
+    ReceivedCarIndex int = 1 // Index xe nhận từ client
+    TargetPos       Vector3 = Vector3{0.0, 0.0, 0.0}
+    MySlot           int = -1
+
+    // Delta time server (fixed)
+    IsInited        bool = false
+    LastServerUpdateTimestamp int = 0
+    ServerUI entity<CustomUI> = nil
+    HasSentUIRef bool = false
+    RankingSyncTimer float = 1.0
+    CurrentScore float = 0.0
+    CurrentRank int = 1
+    SlotCurrentY List<float> = nil
+    SlotTargetY  List<float> = nil
+    SlotWidgets  List<entity<UIWidget>> = nil
+    MyHighlightFrame entity<UIWidget> = nil
+    HighlightCurrentY float = 35.0
+    HighlightTargetY  float = 35.0
+
+    event abcd(p1 object, p2 object, p3 object, p4 object, p5 object, p6 object, p7 object) {}
+
+    func InitCarRegistry() {
+        CarPrefabList = list.New(0, 10)
+        list.Append(CarPrefabList, EditorGenLib.EResPrefab.CR001 as object) // Index 0 (Car 1)
+        list.Append(CarPrefabList, EditorGenLib.EResPrefab.CR002 as object) // Index 1 (Car 2)
+        list.Append(CarPrefabList, EditorGenLib.EResPrefab.CR003 as object) // Index 2 (Car 3)
+        // Future cars: thêm vào đây
+    }
+
+    event OnAwake() {
+        SlotCurrentY = list.New(8, 8) as List<float>
+        SlotTargetY  = list.New(8, 8) as List<float>
+        SlotWidgets  = list.New(8, 8) as List<entity<UIWidget>>
+        for initI = 0, 8, 1 {
+            var defaultY = 35.0 - (initI as float) * 60.0
+            SlotCurrentY[initI] = defaultY
+            SlotTargetY[initI]  = defaultY
+        }
+        HighlightCurrentY = 35.0
+        HighlightTargetY  = 35.0
+        IsInited = true
+    }
+
+    func SpawnProxyCar(carIndex int) {
+        LogInfo("[Server] Car " + convert.ToString(carIndex) + " registered for client-side relay.")
+    }
+
+    event SyncCarIndex(carIndex int) {
+        ReceivedCarIndex = carIndex
+        SpawnProxyCar(carIndex)
+    }
+
+    event SyncKartStateServer(posX float, posY float, posZ float, yaw float, velX float, velY float, velZ float, isBoosting float, isDrifting float) {
+        TargetPos = Vector3{posX, posY, posZ}
+
+        var senderPlayer = thisEntity as entity<Player>
+        if senderPlayer == nil { return }
+
+        var senderUid = senderPlayer<Player>.UserUID
+        if senderUid == "" { return }
+
+        var allPlayers = std.GetAllPlayers()
+        var pCount = list.Length(allPlayers as List<object>)
+        if pCount <= 1 { return }
+
+        // Cố định slot sender (gán 1 lần duy nhất cho mỗi player, không bao giờ thay đổi)
+        if MySlot < 0 {
+            for checkSlot = 0, 8, 1 {
+                var slotTaken = false
+                for pI = 0, pCount, 1 {
+                    var otherP = allPlayers[pI] as entity<Player>
+                    if otherP != nil && otherP != senderPlayer {
+                        if otherP<RacingMovementServer>.MySlot == checkSlot {
+                            slotTaken = true
+                            break
+                        }
+                    }
+                }
+                if !slotTaken {
+                    MySlot = checkSlot
+                    break
+                }
+            }
+        }
+        var senderSlot = MySlot
+        if senderSlot < 0 || senderSlot >= 8 { return }
+
+        var carIdx = ReceivedCarIndex
+        if carIdx <= 0 { carIdx = 1 }
+
+        var driftInt = 0
+        if isDrifting > 0.5 { driftInt = 1 }
+
+        // Relay cho TẤT CẢ người chơi khác — loại trừ bản thân
+        for rI = 0, pCount, 1 {
+            var pTarget = allPlayers[rI] as entity<Player>
+            if pTarget == nil { continue }
+            if pTarget == senderPlayer { continue }
+            if senderUid != "" && pTarget<Player>.UserUID == senderUid { continue }
+            std.DispatchEventToEntity(SyncOpponentClient, pTarget, PlatformType.Client, List<object>{senderSlot as object, carIdx as object, posX as object, posY as object, posZ as object, yaw as object, velX as object, velZ as object, driftInt as object, senderUid as object})
+        }
+    }
+    MinimapSyncTimer float = 0.0
+
+    event OnUpdate() {
+        if !IsInited { return }
+
+        var nowServerTs = std.GetServerTimestamp()
+        var frameDt = 0.033
+        if LastServerUpdateTimestamp > 0 {
+            var rawDtMs = nowServerTs - LastServerUpdateTimestamp
+            if rawDtMs > 0 {
+                frameDt = (rawDtMs as float) / 1000.0
+                if frameDt < 0.016 { frameDt = 0.016 }
+                if frameDt > 0.050 { frameDt = 0.050 }
+            }
+        }
+        LastServerUpdateTimestamp = nowServerTs
+
+        var p = thisEntity as entity<Player>
+        if p != nil {
+            // Khởi tạo RankingUI trên Server (để Avatar Garena Profile tải ổn định 100%)
+            if (ServerUI as entity) == nil {
+                hud.CreateCustomUI(out var ui, p as PlayerOrSpectator, EditorGenLib.EResUI.RankingUI)
+                if ui != nil {
+                    ServerUI = ui
+                    RankingSyncTimer = 1.0 // Trigger đồng bộ ngay lập tức
+                    
+                    // Cache tham chiếu 8 khung ControlBoard và đặt vị trí ban đầu
+                    for wI = 0, 8, 1 {
+                        var bPath = "/InfoPlayerBoard/ControlBoard"
+                        if wI > 0 {
+                            bPath = "/InfoPlayerBoard/ControlBoard (" + convert.ToString(wI) + ")"
+                        }
+                        var bWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, bPath)
+                        SlotWidgets[wI] = bWidget
+                        if (bWidget as entity) != nil {
+                            bWidget<hud.UIWidget>.AnchorPosition = Vector3{-119.0, SlotCurrentY[wI], 0.0}
+                        }
+                    }
+
+                    // Tìm widget khung viền của bản thân (MyHighlightFrame)
+                    MyHighlightFrame = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, "/InfoPlayerBoard/MyHighlightFrame")
+                    if (MyHighlightFrame as entity) == nil {
+                        MyHighlightFrame = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, "/InfoPlayerBoard/HighlightFrame")
+                    }
+                    if (MyHighlightFrame as entity) == nil {
+                        MyHighlightFrame = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, "/InfoPlayerBoard/KhungBanThan")
+                    }
+                    if (MyHighlightFrame as entity) == nil {
+                        MyHighlightFrame = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, "/InfoPlayerBoard/Khung")
+                    }
+                    if (MyHighlightFrame as entity) == nil {
+                        MyHighlightFrame = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, "/InfoPlayerBoard/Frame")
+                    }
+                    if (MyHighlightFrame as entity) != nil {
+                        MyHighlightFrame<hud.UIWidget>.AnchorPosition = Vector3{0.0, 35.0, 0.0}
+                        MyHighlightFrame<hud.UIWidget>.IsVisible = true
+                    }
+                }
+            }
+
+            if (ServerUI as entity) != nil {
+                // 1. ĐỒNG BỘ THỨ HẠNG & TARGET Y (Mỗi 0.15 giây)
+                RankingSyncTimer += frameDt
+                if RankingSyncTimer >= 0.15 {
+                    RankingSyncTimer = 0.0
+                    
+                    var allPlayers = std.GetAllPlayers()
+                    var rawCount = list.Length(allPlayers as List<object>)
+                    
+                    // Sắp xếp người chơi bằng cơ chế chèn (Insertion Sort với list.Insert)
+                    var sortedPlayers = list.New(0, 8)
+                    for pI = 0, rawCount, 1 {
+                        var pEnt = allPlayers[pI] as entity<Player>
+                        if pEnt != nil {
+                            var score = pEnt<RacingMovementServer>.CurrentScore
+                            var inserted = false
+                            var curSortedCount = list.Length(sortedPlayers)
+                            for s = 0, curSortedCount, 1 {
+                                var pCur = sortedPlayers[s] as entity<Player>
+                                if pCur != nil && score > (pCur<RacingMovementServer>.CurrentScore) {
+                                    list.Insert(sortedPlayers, s, pEnt as object)
+                                    inserted = true
+                                    break
+                                }
+                            }
+                            if !inserted {
+                                list.Append(sortedPlayers, pEnt as object)
+                            }
+                        }
+                    }
+                    
+                    var pCount = list.Length(sortedPlayers)
+                    if pCount > 8 { pCount = 8 }
+                    
+                    // Cập nhật mục tiêu Target Y cho từng Slot i
+                    for i = 0, 8, 1 {
+                        var widgetPath = "/InfoPlayerBoard/ControlBoard/InfoPlayer"
+                        if i > 0 {
+                            widgetPath = "/InfoPlayerBoard/ControlBoard (" + convert.ToString(i) + ")/InfoPlayer"
+                        }
+                        
+                        var profileWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, widgetPath)
+                        var boardWidget = SlotWidgets[i]
+                        
+                        if i < pCount {
+                            var pTarget = allPlayers[i] as entity<Player>
+                            if pTarget != nil {
+                                // Khung Slot i luôn giữ cố định Avatar của Player i (không reload avatar)
+                                if (profileWidget as entity) != nil {
+                                    profileWidget<UIWidgetProfile>.AccountID = pTarget<Player>.UserUID
+                                    profileWidget<hud.UIWidget>.IsVisible = true
+                                }
+                                
+                                // Tìm thứ hạng của Player i trong bảng đã sắp xếp
+                                var rankIndex = i
+                                for sIdx = 0, pCount, 1 {
+                                    if (sortedPlayers[sIdx] as entity<Player>) == pTarget {
+                                        rankIndex = sIdx
+                                        break
+                                    }
+                                }
+                                
+                                var newTargetY = 35.0 - (rankIndex as float) * 60.0
+                                SlotTargetY[i] = newTargetY
+                                
+                                // Nếu là người chơi hiện tại: Cập nhật HighlightTargetY bám theo (35.0 ở Top 1)
+                                if pTarget == p {
+                                    HighlightTargetY = 35.0 - (rankIndex as float) * 60.0
+                                }
+                                if (boardWidget as entity) != nil {
+                                    boardWidget<hud.UIWidget>.IsVisible = true
+                                }
+                            }
+                        } else {
+                            // Ẩn slot nếu phòng không có người chơi đó ngay từ đầu
+                            if (boardWidget as entity) != nil {
+                                boardWidget<hud.UIWidget>.IsVisible = false
+                            }
+                        }
+                    }
+                }
+                
+                // Lấy dt cố định của server tick (khoảng 0.033s)
+                var fixedDt = frameDt
+                
+                // 2. LERP MƯỢT TỪNG FRAME TẤT CẢ CÁC KHUNG VỀ VỊ TRÍ ĐÍCH
+                // Sử dụng Frame-rate Independent Exponential Damping
+                var alphaBoard = 1.0 - (math.Exponentiation(2.71828183, -12.0 * fixedDt) as float)
+                for lI = 0, 8, 1 {
+                    var bWidget = SlotWidgets[lI]
+                    if (bWidget as entity) != nil && (bWidget<hud.UIWidget>.IsVisible) {
+                        var curY = SlotCurrentY[lI]
+                        var tgtY = SlotTargetY[lI]
+                        var diff = tgtY - curY
+                        
+                        // Deadzone Snap: Tránh rung vi mô
+                        if math.Abs(diff) <= 0.35 {
+                            if math.Abs(diff) > 0.0 {
+                                SlotCurrentY[lI] = tgtY
+                                bWidget<hud.UIWidget>.AnchorPosition = Vector3{-119.0, tgtY, 0.0}
+                            }
+                        } else {
+                            curY = curY + diff * alphaBoard
+                            SlotCurrentY[lI] = curY
+                            bWidget<hud.UIWidget>.AnchorPosition = Vector3{-119.0, curY, 0.0}
+                        }
+                    }
+                }
+                // 3. LERP MƯỢT ĐUỔI THEO CHO KHUNG VIỀN CỦA BẢN THÂN
+                if (MyHighlightFrame as entity) != nil {
+                    var hlDiff = HighlightTargetY - HighlightCurrentY
+                    if math.Abs(hlDiff) <= 0.35 {
+                        if math.Abs(hlDiff) > 0.0 {
+                            HighlightCurrentY = HighlightTargetY
+                            MyHighlightFrame<hud.UIWidget>.AnchorPosition = Vector3{0.0, HighlightTargetY, 0.0}
+                        }
+                    } else {
+                        var alphaHL = 1.0 - (math.Exponentiation(2.71828183, -15.0 * fixedDt) as float)
+                        HighlightCurrentY = HighlightCurrentY + hlDiff * alphaHL
+                        MyHighlightFrame<hud.UIWidget>.AnchorPosition = Vector3{0.0, HighlightCurrentY, 0.0}
+                    }
+                    MyHighlightFrame<hud.UIWidget>.IsVisible = true
+                }
+            }
+        }
+    }
+
+    // =========================================================
+    // LẮNG NGHE LỆNH RESET TỪ UI (CLIENT)
+    // =========================================================
+    event onResetCar() {
+        var p = thisEntity as entity<Player>
+        if p == nil { return }
+
+        // BƯỚC 1: Vì đây là Server, không thể ghi trực tiếp biến IsLocalResetting của Client (p<rm>.IsLocalResetting).
+        // Thay vào đó, ta bỏ qua biến Global của RaceManager và gọi trực tiếp lệnh Reset (cmdType 3) xuống Client này!
+        std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{3})
+
+        LogInfo("[Server] Đã relay lệnh Reset xuống độc lập cho Client: " + p<Entity>.Name)
+
+        // Việc đếm ngược mở khóa (UnlockRequestTimer) đã được Client tự lo.
+        // Khi vật lý trên Client ổn định, nó sẽ tự gọi lên Server hỏi RaceManager để mở khóa.
+    }
+
+}
+

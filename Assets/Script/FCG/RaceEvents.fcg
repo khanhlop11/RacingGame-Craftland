@@ -1,0 +1,4 @@
+// RaceEvents.fcg — Placeholder, không dùng trực tiếp
+import "StdLibrary.fcc" as std
+
+graph RaceEvents {}

@@ -1,0 +1,105 @@
+// ============================================================
+// KartNitro.fcg
+// Nitro helper subsystem for RacingMovement.
+//
+// Compiler-safe extraction:
+// - No Event parameter.
+// - No entity/component parameter.
+// - Only pure bool/float state calculation.
+// - RacingMovement still owns UI dispatch and update order.
+// ============================================================
+import "StdLibrary.fcc" as std
+[platform_client]
+static graph KartNitro {
+
+    func ShouldStartPostDriftBoost(isBraking bool, prevIsBraking bool) bool {
+        return !isBraking && prevIsBraking
+    }
+
+    func ClampNitroCharge(nitroCharge float, maxNitroCharge float) float {
+        var safeMax = 100.0
+        if maxNitroCharge > 0.0 && maxNitroCharge < safeMax { safeMax = maxNitroCharge }
+        var result = nitroCharge
+        if result < 0.0 { result = 0.0 }
+        if result > safeMax { result = safeMax }
+        return result
+    }
+
+    func ApplyDriftCharge(nitroCharge float, isDriftTurning bool, nitroChargeRate float, maxNitroCharge float, dt float) float {
+        var result = ClampNitroCharge(nitroCharge, maxNitroCharge)
+        if isDriftTurning {
+            result += nitroChargeRate * dt
+            result = ClampNitroCharge(result, maxNitroCharge)
+        }
+        return result
+    }
+
+    func ApplyBoostDrain(nitroCharge float, isBoosting bool, nitroDrainRate float, maxNitroCharge float, dt float) float {
+        var result = ClampNitroCharge(nitroCharge, maxNitroCharge)
+        if isBoosting {
+            if result > 0.0 {
+                result -= nitroDrainRate * dt
+                if result < 0.0 { result = 0.0 }
+            }
+        }
+        return ClampNitroCharge(result, maxNitroCharge)
+    }
+
+    func ShouldStopBoostAfterDrain(nitroCharge float, isBoosting bool) bool {
+        return isBoosting && nitroCharge <= 0.0
+    }
+
+    func UpdateNitroTime(nitroTimeActive float, isBoosting bool, dt float) float {
+        if isBoosting { return nitroTimeActive + dt }
+        return 0.0
+    }
+
+    func CalcBoostPowerTarget(isBoosting bool, nitroBoostTier int) float {
+        if !isBoosting { return 0.0 }
+        if nitroBoostTier <= 1 { return 0.50 }
+        if nitroBoostTier == 2 { return 0.78 }
+        return 1.0
+    }
+
+    func CalcBoostDrainRate(nitroDrainRate float, nitroBoostTier int) float {
+        if nitroBoostTier <= 1 { return nitroDrainRate * 0.5 }
+        if nitroBoostTier == 2 { return nitroDrainRate * 0.7 }
+        return nitroDrainRate
+    }
+
+    func CalcBoostTopMult(nitroBoostTier int) float {
+        if nitroBoostTier <= 1 { return 0.82 }
+        if nitroBoostTier == 2 { return 0.95 }
+        return 1.10
+    }
+
+    func CalcBoostAccelMult(nitroBoostTier int) float {
+        if nitroBoostTier <= 1 { return 1.00 }
+        if nitroBoostTier == 2 { return 1.25 }
+        return 1.50
+    }
+
+    func CalcBoostDecayMult(nitroBoostTier int) float {
+        if nitroBoostTier <= 1 { return 0.70 }
+        if nitroBoostTier == 2 { return 0.90 }
+        return 1.10
+    }
+
+    func CalcBoostPowerTargetFromTier(isBoosting bool, nitroBoostTier int) float {
+        if isBoosting { return CalcBoostPowerTarget(true, nitroBoostTier) }
+        return 0.0
+    }
+
+    func SmoothBoostPower(boostPower float, boostPowerTarget float, dt float) float {
+        var boostPowerSharp = 7.0
+        if boostPowerTarget < boostPower { boostPowerSharp = 4.0 }
+        var result = boostPower + (boostPowerTarget - boostPower) * (dt * boostPowerSharp)
+        if result < 0.0 { result = 0.0 }
+        if result > 1.0 { result = 1.0 }
+        return result
+    }
+
+    func ShouldShowNitro(nitroCharge float, postDriftBoostTimer float, isDrift bool) bool {
+        return (nitroCharge > 0.05 || postDriftBoostTimer > 0.4) && !isDrift
+    }
+}

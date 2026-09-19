@@ -1,0 +1,96 @@
+// KartSkidmark.fcg — skidmark line render helpers
+// Platform: Client
+// Purpose: own visual tyre trail point collection and line lifetime.
+import "StdLibrary.fcc" as std
+import "List.fcc" as list
+import "EditorGenLib.fcc" as EditorGenLib
+import "Physics.fcc" as physics
+
+[platform_client]
+static graph KartSkidmark {
+    async func CreateSkidLineAsync(index int, pts List<Vector3>, skidLines List<object>, skidPoints List<object>, baseSkidWidth float) {
+        std.CreateLineRenderEntity(out var line, pts, EResMaterial.Skid)
+        if line != nil {
+            line<LineRenderEntity>.Width = baseSkidWidth
+
+            var currentPts = skidPoints[index] as List<Vector3>
+            if currentPts == pts {
+                list.RemoveAt(skidLines, index)
+                list.Insert(skidLines, index, line as object)
+            }
+            WaitForMillisecond(3500)
+            if line != nil {
+                std.Destroy(line as entity)
+            }
+        }
+    }
+
+    func AppendSkidPoint(node entity<Entity>, index int, skidLines List<object>, skidPoints List<object>, nx float, ny float, nz float) bool {
+        if node == nil { return false as bool }
+        var wPos = node<Transform>.Position
+
+        // Bắn Raycast từ bánh xe xuống để tìm chính xác điểm tiếp xúc trên mặt đường
+        var rayStart = Vector3{wPos.X, wPos.Y + 0.35, wPos.Z}
+        var rayDir = Vector3{0.0, -1.0, 0.0}
+        physics.SingleRaycast(rayStart, rayDir, 0.9, nil, false, out var hitEnt, out var hitPos, out var hitDist, out var hitNorm)
+
+        if hitEnt == nil {
+            // Bánh xe đang ở trên không (không chạm đất) -> Không vẽ vệt
+            return false as bool
+        }
+
+        // Tọa độ dán chặt trên mặt đất (nâng nhẹ 2cm theo pháp tuyến mặt đất để chống z-fighting)
+        var groundPos = Vector3{hitPos.X + hitNorm.X * 0.02, hitPos.Y + hitNorm.Y * 0.02, hitPos.Z + hitNorm.Z * 0.02}
+
+        var pts = skidPoints[index] as List<Vector3>
+        var pLen = list.Length(pts as List<object>)
+
+        // LỌC KHOẢNG CÁCH: Ít nhất 0.45m mới thêm điểm mới (loại bỏ hoàn toàn gai nhọn và nếp xoắn 3D)
+        if pLen > 0 {
+            var lastPt = pts[pLen - 1]
+            var dx = groundPos.X - lastPt.X
+            var dy = groundPos.Y - lastPt.Y
+            var dz = groundPos.Z - lastPt.Z
+            var distSq = dx * dx + dy * dy + dz * dz
+            if distSq < 0.20 {
+                return false as bool
+            }
+        }
+
+        list.Append(pts as List<object>, groundPos as object)
+        pLen += 1
+
+        var line = skidLines[index] as entity<LineRenderEntity>
+        if line == nil {
+            // Cần tối thiểu 2 điểm để tạo 1 LineRenderer hợp lệ có vector hướng rõ ràng
+            return (pLen == 2) as bool
+        }
+
+        line<LineRenderEntity>.Points = pts
+
+        // Tối đa 30 điểm cho mỗi phân đoạn để đảm bảo line luôn phẳng phiu và nhẹ máy
+        if pLen >= 30 {
+            ResetSkidSlot(index, skidLines, skidPoints)
+        }
+
+        return false as bool
+    }
+
+    func ResetSkidSlot(index int, skidLines List<object>, skidPoints List<object>) {
+        var line = skidLines[index] as entity<LineRenderEntity>
+        if line != nil {
+            list.RemoveAt(skidLines, index)
+            list.Insert(skidLines, index, nil)
+            var newPts = list.New(0, 35) as List<Vector3>
+            list.RemoveAt(skidPoints, index)
+            list.Insert(skidPoints, index, newPts as object)
+        } else {
+            var pts = skidPoints[index] as List<Vector3>
+            if list.Length(pts as List<object>) > 0 {
+                var newPts = list.New(0, 35) as List<Vector3>
+                list.RemoveAt(skidPoints, index)
+                list.Insert(skidPoints, index, newPts as object)
+            }
+        }
+    }
+}
