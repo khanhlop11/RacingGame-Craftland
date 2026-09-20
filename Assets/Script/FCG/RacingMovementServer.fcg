@@ -42,6 +42,16 @@ graph RacingMovementServer {
     MyHighlightFrame entity<UIWidget> = nil
     HighlightCurrentY float = 35.0
     HighlightTargetY  float = 35.0
+    MainWidget entity<UIWidget> = nil
+    IsFinishBoardShown bool = false
+
+    // Tuning bảng xếp hạng & tổng kết trận
+    MaxRankingSlots int = 5             // Số người chơi hiển thị (Map 5 người)
+    BoardSlotX float = -580.0           // Tọa độ X của ControlBoard theo editor
+    BoardHighlightX float = -649.0      // Tọa độ X của MyHighlightFrame theo editor
+    BoardStartY float = 280.0           // Cao độ Top 1 (tăng 140 từ 140 lên 280 theo yêu cầu)
+    BoardSpacingY float = 70.0          // Khoảng cách giữa các hàng
+    HighlightOffsetY float = 42.0       // Độ lệch Y của MyHighlightFrame so với ControlBoard (182 - 140 = 42)
 
     event abcd(p1 object, p2 object, p3 object, p4 object, p5 object, p6 object, p7 object) {}
 
@@ -58,12 +68,12 @@ graph RacingMovementServer {
         SlotTargetY  = list.New(8, 8) as List<float>
         SlotWidgets  = list.New(8, 8) as List<entity<UIWidget>>
         for initI = 0, 8, 1 {
-            var defaultY = 35.0 - (initI as float) * 60.0
+            var defaultY = BoardStartY - (initI as float) * BoardSpacingY
             SlotCurrentY[initI] = defaultY
             SlotTargetY[initI]  = defaultY
         }
-        HighlightCurrentY = 35.0
-        HighlightTargetY  = 35.0
+        HighlightCurrentY = BoardStartY + HighlightOffsetY
+        HighlightTargetY  = BoardStartY + HighlightOffsetY
         IsInited = true
     }
 
@@ -151,7 +161,13 @@ graph RacingMovementServer {
                 if ui != nil {
                     ServerUI = ui
                     RankingSyncTimer = 1.0 // Trigger đồng bộ ngay lập tức
-                    
+
+                    // Ẩn bảng /Main lúc bắt đầu cuộc đua
+                    MainWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, "/Main")
+                    if (MainWidget as entity) != nil {
+                        MainWidget<hud.UIWidget>.IsVisible = false
+                    }
+
                     // Cache tham chiếu 8 khung ControlBoard và đặt vị trí ban đầu
                     for wI = 0, 8, 1 {
                         var bPath = "/InfoPlayerBoard/ControlBoard"
@@ -161,7 +177,10 @@ graph RacingMovementServer {
                         var bWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, bPath)
                         SlotWidgets[wI] = bWidget
                         if (bWidget as entity) != nil {
-                            bWidget<hud.UIWidget>.AnchorPosition = Vector3{-119.0, SlotCurrentY[wI], 0.0}
+                            bWidget<hud.UIWidget>.AnchorPosition = Vector3{BoardSlotX, SlotCurrentY[wI], 0.0}
+                            if wI >= MaxRankingSlots {
+                                bWidget<hud.UIWidget>.IsVisible = false
+                            }
                         }
                     }
 
@@ -180,7 +199,7 @@ graph RacingMovementServer {
                         MyHighlightFrame = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, "/InfoPlayerBoard/Frame")
                     }
                     if (MyHighlightFrame as entity) != nil {
-                        MyHighlightFrame<hud.UIWidget>.AnchorPosition = Vector3{0.0, 35.0, 0.0}
+                        MyHighlightFrame<hud.UIWidget>.AnchorPosition = Vector3{BoardHighlightX, BoardStartY + HighlightOffsetY, 0.0}
                         MyHighlightFrame<hud.UIWidget>.IsVisible = true
                     }
                 }
@@ -218,7 +237,7 @@ graph RacingMovementServer {
                     }
                     
                     var pCount = list.Length(sortedPlayers)
-                    if pCount > 8 { pCount = 8 }
+                    if pCount > MaxRankingSlots { pCount = MaxRankingSlots }
                     
                     // Cập nhật mục tiêu Target Y cho từng Slot i
                     for i = 0, 8, 1 {
@@ -248,19 +267,19 @@ graph RacingMovementServer {
                                     }
                                 }
                                 
-                                var newTargetY = 35.0 - (rankIndex as float) * 60.0
+                                var newTargetY = BoardStartY - (rankIndex as float) * BoardSpacingY
                                 SlotTargetY[i] = newTargetY
                                 
-                                // Nếu là người chơi hiện tại: Cập nhật HighlightTargetY bám theo (35.0 ở Top 1)
+                                // Nếu là người chơi hiện tại: Cập nhật HighlightTargetY bám theo
                                 if pTarget == p {
-                                    HighlightTargetY = 35.0 - (rankIndex as float) * 60.0
+                                    HighlightTargetY = BoardStartY - (rankIndex as float) * BoardSpacingY + HighlightOffsetY
                                 }
                                 if (boardWidget as entity) != nil {
                                     boardWidget<hud.UIWidget>.IsVisible = true
                                 }
                             }
                         } else {
-                            // Ẩn slot nếu phòng không có người chơi đó ngay từ đầu
+                            // Ẩn slot nếu phòng không có người chơi đó hoặc vượt quá MaxRankingSlots
                             if (boardWidget as entity) != nil {
                                 boardWidget<hud.UIWidget>.IsVisible = false
                             }
@@ -275,6 +294,7 @@ graph RacingMovementServer {
                 // Sử dụng Frame-rate Independent Exponential Damping
                 var alphaBoard = 1.0 - (math.Exponentiation(2.71828183, -12.0 * fixedDt) as float)
                 for lI = 0, 8, 1 {
+                    if lI >= MaxRankingSlots { continue }
                     var bWidget = SlotWidgets[lI]
                     if (bWidget as entity) != nil && (bWidget<hud.UIWidget>.IsVisible) {
                         var curY = SlotCurrentY[lI]
@@ -285,29 +305,40 @@ graph RacingMovementServer {
                         if math.Abs(diff) <= 0.35 {
                             if math.Abs(diff) > 0.0 {
                                 SlotCurrentY[lI] = tgtY
-                                bWidget<hud.UIWidget>.AnchorPosition = Vector3{-119.0, tgtY, 0.0}
+                                bWidget<hud.UIWidget>.AnchorPosition = Vector3{BoardSlotX, tgtY, 0.0}
                             }
                         } else {
                             curY = curY + diff * alphaBoard
                             SlotCurrentY[lI] = curY
-                            bWidget<hud.UIWidget>.AnchorPosition = Vector3{-119.0, curY, 0.0}
+                            bWidget<hud.UIWidget>.AnchorPosition = Vector3{BoardSlotX, curY, 0.0}
                         }
                     }
                 }
-                // 3. LERP MƯỢT ĐUỔI THEO CHO KHUNG VIỀN CỦA BẢN THÂN
+                // 3. LERP MƯỢT ĐUỔI THEO CHO KHUNG VIỀN CỦA BẢN THÂN
                 if (MyHighlightFrame as entity) != nil {
                     var hlDiff = HighlightTargetY - HighlightCurrentY
                     if math.Abs(hlDiff) <= 0.35 {
                         if math.Abs(hlDiff) > 0.0 {
                             HighlightCurrentY = HighlightTargetY
-                            MyHighlightFrame<hud.UIWidget>.AnchorPosition = Vector3{0.0, HighlightTargetY, 0.0}
+                            MyHighlightFrame<hud.UIWidget>.AnchorPosition = Vector3{BoardHighlightX, HighlightTargetY, 0.0}
                         }
                     } else {
                         var alphaHL = 1.0 - (math.Exponentiation(2.71828183, -15.0 * fixedDt) as float)
                         HighlightCurrentY = HighlightCurrentY + hlDiff * alphaHL
-                        MyHighlightFrame<hud.UIWidget>.AnchorPosition = Vector3{0.0, HighlightCurrentY, 0.0}
+                        MyHighlightFrame<hud.UIWidget>.AnchorPosition = Vector3{BoardHighlightX, HighlightCurrentY, 0.0}
                     }
                     MyHighlightFrame<hud.UIWidget>.IsVisible = true
+                }
+
+                // 4. KIỂM TRA FINISH ĐỂ BẬT BẢNG TỔNG KẾT (/Main)
+                if !IsFinishBoardShown && CurrentScore >= 90000000.0 {
+                    IsFinishBoardShown = true
+                    if (MainWidget as entity) == nil {
+                        MainWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, ServerUI, "/Main")
+                    }
+                    if (MainWidget as entity) != nil {
+                        MainWidget<hud.UIWidget>.IsVisible = true
+                    }
                 }
             }
         }

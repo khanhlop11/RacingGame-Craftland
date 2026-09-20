@@ -253,6 +253,9 @@ graph RacingMovement {
     // Asphalt 8 / Ace Racer Nitro Camera: hạ thấp + ngước nhìn luồng lửa phản lực ống xả
     CamNitroHeightDrop float = 0.0      // Runtime: current Y drop khi Nitro
     CamNitroPitchUp    float = 0.0      // Runtime: current pitch up khi Nitro
+    NitroCamBlend      float = 0.0      // Camera-only boost feel blend; does not affect vehicle physics
+    NitroCamKickTimer  float = 0.0      // Short camera punch window after Nitro activation
+    NitroCamKickDuration float = 0.52
     CamNitroHeightDropMax float = -0.10 // Nitro: giữ nguyên cao độ ống xả chuẩn đã ổn (0.22 - 0.10 = 0.12m)
     CamNitroPitchUpMax float = 3.5      // Nitro: ngước thêm nhìn vào luồng phản lực
 
@@ -696,6 +699,8 @@ graph RacingMovement {
         TractionRecoveryTimer = 0.0
         DriftEntryKickDone = false
         BoostBlend = 0.0
+        NitroCamBlend = 0.0
+        NitroCamKickTimer = 0.0
         CamLookAheadOffset = 0.0
         CamOffsetX  = 0.0
         LastTimestamp = time.GetLocalTimestamp()
@@ -938,6 +943,8 @@ graph RacingMovement {
         IsReversing = false
         IsNitroRecovering = false
         NitroShakeLoopTimer = 0.0
+        NitroCamBlend = 0.0
+        NitroCamKickTimer = 0.0
 
         DriftBlend = 0.0
         DriftFlowTimer = 0.0
@@ -1161,6 +1168,8 @@ graph RacingMovement {
             TractionRecoveryTimer = 0.0
             DriftEntryKickDone = false
             BoostBlend = 0.0
+            NitroCamBlend = 0.0
+            NitroCamKickTimer = 0.0
             CamLookAheadOffset = 0.0
             SyncNitroEffects()
             SyncDriftEffects(false)
@@ -2154,7 +2163,7 @@ graph RacingMovement {
 
     func TriggerNitroInitialKickShake() {
         // Cú giật đề-pa Nitro: Dằn nảy trục Y (0.26) và nhún lùi Z (0.08), triệt tiêu trục ngang X để loại bỏ giật lag hai bên
-        camera.PlayCustomCameraShake(Vector3{0.02, 0.26, 0.08}, 0.32, 20.0, 40, 260, 420)
+        camera.PlayCustomCameraShake(Vector3{0.03, 0.34, 0.12}, 0.42, 22.0, 30, 260, 480)
     }
 
     func TriggerLandingCameraShake(impactForce float) {
@@ -3257,6 +3266,8 @@ graph RacingMovement {
                     IsBoosting = false
                     BoostBlend = 0.0
                     BoostPower = 0.0
+                    NitroCamBlend = 0.0
+                    NitroCamKickTimer = 0.0
                 }
             } else if UseCustomWallScrapeResponse && sideScrapeHit && !IsReversing {
                 // CẠ TƯỜNG: giữ collision response gốc, chỉ loại vận tốc đi vào tường.
@@ -3817,6 +3828,7 @@ graph RacingMovement {
             if IsBoosting != PrevIsBoosting {
                 SyncNitroEffects()
                 if IsBoosting {
+                    NitroCamKickTimer = NitroCamKickDuration
                     TriggerNitroInitialKickShake()
                 }
             }
@@ -3876,6 +3888,8 @@ graph RacingMovement {
             if Frame_IsCrashing {
                 if IsBoosting { IsBoosting = false }
                 BoostBlend = 0.0
+                NitroCamBlend = 0.0
+                NitroCamKickTimer = 0.0
             }
              
             if math.Abs(LandingSlidePwr) > 0.1 {
@@ -4095,7 +4109,12 @@ graph RacingMovement {
 
                 var nitroSquatPitch = 0.0
                 if IsBoosting {
-                    nitroSquatPitch = 1.2
+                    nitroSquatPitch = 0.8 + BoostBlend * 0.7
+                    if NitroCamKickDuration > 0.01 && NitroCamKickTimer > 0.0 {
+                        var visualKick = NitroCamKickTimer / NitroCamKickDuration
+                        if visualKick > 1.0 { visualKick = 1.0 }
+                        nitroSquatPitch += visualKick * 0.9
+                    }
                 }
                 var finalPitch = wobblePitch + stuntPitch + DriftEntryDipPitch + nitroSquatPitch
                 var finalYaw = CurrentVisualYaw + FlatSpinVisualAngle + DriftVisualYawOffset
@@ -4113,6 +4132,37 @@ graph RacingMovement {
             var speedRatio = KartMath.CalcClampedSpeedRatio(CurrentSpeedKmh, TopSpeed)
 
             var cameraBoostActive = IsBoosting
+            var nitroCamTarget = 0.0
+            if cameraBoostActive {
+                nitroCamTarget = BoostPower
+                if nitroCamTarget < 0.35 { nitroCamTarget = 0.35 }
+            }
+            var nitroCamSharp = 2.4
+            if nitroCamTarget > NitroCamBlend {
+                nitroCamSharp = 9.5
+            }
+            NitroCamBlend = NitroCamBlend + (nitroCamTarget - NitroCamBlend) * KartMath.CalcExpLerpFactor(nitroCamSharp, dt)
+            if NitroCamBlend < 0.005 { NitroCamBlend = 0.0 }
+            if NitroCamBlend > 1.0 { NitroCamBlend = 1.0 }
+            if NitroCamKickTimer > 0.0 {
+                NitroCamKickTimer -= dt
+                if NitroCamKickTimer < 0.0 { NitroCamKickTimer = 0.0 }
+            }
+            var nitroKick = 0.0
+            if NitroCamKickDuration > 0.01 && NitroCamKickTimer > 0.0 {
+                nitroKick = NitroCamKickTimer / NitroCamKickDuration
+                if nitroKick < 0.0 { nitroKick = 0.0 }
+                if nitroKick > 1.0 { nitroKick = 1.0 }
+                nitroKick = nitroKick * nitroKick
+            }
+            var nitroTierFeel = 0.82
+            if NitroBoostTier == 2 {
+                nitroTierFeel = 1.0
+            } else if NitroBoostTier >= 3 {
+                nitroTierFeel = 1.18
+            }
+            var nitroFeel = NitroCamBlend * nitroTierFeel
+            if nitroFeel > 1.22 { nitroFeel = 1.22 }
 
             var turnInputForCam = 0.0
             if !isMovementLocked {
@@ -4152,7 +4202,25 @@ graph RacingMovement {
             }   
 
             var targetFOV = KartCameraMath.CalcFovTarget(speedRatio, isDriftActive, DriftBlend, cameraBoostActive, NitroTimeActive, ShakeTime, FovMin, FovMax, effectiveFovBoost, CamFovBreathAmp)
+            if NitroCamBlend > 0.01 || nitroKick > 0.01 {
+                var sustainFov = FovMin + (FovMax - FovMin) * speedRatio + 8.0 * nitroFeel
+                if NitroBoostTier == 2 {
+                    sustainFov += 4.0 * NitroCamBlend
+                } else if NitroBoostTier >= 3 {
+                    sustainFov += 8.0 * NitroCamBlend
+                }
+                var kickFov = 10.0 * nitroKick * nitroTierFeel
+                var nitroFovTarget = sustainFov + kickFov
+                if CurrentSpeedKmh > TopSpeed {
+                    nitroFovTarget += 4.0 * NitroCamBlend
+                }
+                if nitroFovTarget > 111.0 { nitroFovTarget = 111.0 }
+                if nitroFovTarget > targetFOV { targetFOV = nitroFovTarget }
+            }
             var camFovLerp = KartCameraMath.CalcFovLerpSpeed(cameraBoostActive)
+            if NitroCamBlend > 0.01 || nitroKick > 0.01 {
+                camFovLerp = 2.8 + 6.5 * NitroCamBlend + 5.0 * nitroKick
+            }
                 CurrentFOV = math.Lerp(CurrentFOV, targetFOV, KartMath.CalcExpLerpFactor(camFovLerp, dt))
             MyClientCam<camera.CustomCamera>.FOV = CurrentFOV
 
@@ -4192,6 +4260,16 @@ graph RacingMovement {
             if shakeIntensity > 0.01 {
                 finalShakeZ = (math.Sin(ShakeTime * 88.0) * (shakeIntensity * 0.35)) as float
             }
+            if NitroCamBlend > 0.01 || nitroKick > 0.01 {
+                var nitroRumble = nitroFeel * (0.65 + speedRatio * 0.35)
+                if ImpactTimer > 0.0 || CrashCamSnapTimer > 0.0 {
+                    nitroRumble = nitroRumble * 0.25
+                }
+                if nitroRumble > 1.15 { nitroRumble = 1.15 }
+                finalShakeX = finalShakeX + ((math.Sin(ShakeTime * 29.0) * 0.045 + math.Sin(ShakeTime * 61.0) * 0.020) * nitroRumble)
+                finalShakeY = finalShakeY + ((math.Sin(ShakeTime * 41.0) * 0.030 + math.Cos(ShakeTime * 83.0) * 0.014) * nitroRumble)
+                finalShakeZ = finalShakeZ + ((math.Sin(ShakeTime * 53.0) * 0.030 + nitroKick * 0.035) * nitroRumble)
+            }
 
             var camRotSharp = KartCameraRuntime.CalcCamRotSharp(CamRotationSharp, CamCatchUpSharp, cameraBoostActive, 0.0, CamAngularVelocityCap)
 
@@ -4204,6 +4282,15 @@ graph RacingMovement {
             CamAngularVelocity = camAngleDeltaDeg / dt
 
             camRotSharp = KartCameraRuntime.CalcCamRotSharp(CamRotationSharp, CamCatchUpSharp, cameraBoostActive, CamAngularVelocity, CamAngularVelocityCap)
+            if NitroCamBlend > 0.01 || nitroKick > 0.01 {
+                var nitroCameraLagDamp = 1.0 - NitroCamBlend * 0.16 - nitroKick * 0.12
+                if isDriftActive {
+                    nitroCameraLagDamp = 1.0 - NitroCamBlend * 0.08
+                }
+                if nitroCameraLagDamp < 0.70 { nitroCameraLagDamp = 0.70 }
+                camRotSharp = camRotSharp * nitroCameraLagDamp
+                if camRotSharp < 2.0 { camRotSharp = 2.0 }
+            }
 
             if !IsStableGrounded && AirTime > 0.08 {
                 var predDir = Vector3{-LastContactNx, -LastContactNy, -LastContactNz}
@@ -4239,6 +4326,9 @@ graph RacingMovement {
 
             var fovInertiaZ = KartCameraRuntime.CalcFovInertiaZ(CurrentFOV, FovMin)
             var targetBoostPull = KartCameraRuntime.CalcBoostPull(cameraBoostActive, CamBoostLagPulse)
+            if NitroCamBlend > 0.01 || nitroKick > 0.01 {
+                targetBoostPull = 0.22 * nitroFeel + 0.46 * nitroKick * nitroTierFeel
+            }
             var boostPullSharp = 1.2
             if targetBoostPull > CamBoostPullCurrent { boostPullSharp = 7.0 }
             CamBoostPullCurrent = CamBoostPullCurrent + (targetBoostPull - CamBoostPullCurrent) * (dt * boostPullSharp)
@@ -4277,6 +4367,12 @@ graph RacingMovement {
                 // Nghiêng camera khi cua thường (~4.5°)
                 driftRollTarget = -turnInputForCam * 4.5
             }
+            if NitroCamBlend > 0.01 {
+                var nitroDriftReadability = 1.0 - NitroCamBlend * 0.16
+                if nitroDriftReadability < 0.84 { nitroDriftReadability = 0.84 }
+                driftYawInwardTarget = driftYawInwardTarget * nitroDriftReadability
+                driftRollTarget = driftRollTarget * nitroDriftReadability
+            }
 
             var camDriftLerpIn = 3.5
             var camDriftLerpOut = 2.0
@@ -4306,9 +4402,9 @@ graph RacingMovement {
             var nitroHeightTarget = 0.0
             var nitroPitchTarget = 0.0
             var nitroBackPull = 0.0
-            if cameraBoostActive {
-                nitroHeightTarget = -0.10 * speedRatio
-                nitroBackPull = 0.35 * (speedRatio as float)
+            if NitroCamBlend > 0.01 || nitroKick > 0.01 {
+                nitroHeightTarget = (-0.06 * NitroCamBlend - 0.10 * nitroKick) * (0.70 + speedRatio * 0.30)
+                nitroBackPull = (0.18 * NitroCamBlend + 0.22 * nitroKick) * (speedRatio as float) * nitroTierFeel
                 var dynPitch = 2.0
                 if CurrentSpeedKmh > TopSpeed {
                     var overspeed = CurrentSpeedKmh - TopSpeed
@@ -4326,16 +4422,25 @@ graph RacingMovement {
                     tierMinPitch = 6.5
                 }
                 if dynPitch < tierMinPitch { dynPitch = tierMinPitch }
-                nitroPitchTarget = dynPitch
+                nitroPitchTarget = dynPitch * NitroCamBlend + 2.0 * nitroKick * nitroTierFeel
             }
-            CamNitroHeightDrop = CamNitroHeightDrop + (nitroHeightTarget - CamNitroHeightDrop) * (dt * 6.0)
-            CamNitroPitchUp = CamNitroPitchUp + (nitroPitchTarget - CamNitroPitchUp) * (dt * 6.0)
+            var nitroPoseSharp = 4.5
+            if nitroHeightTarget < CamNitroHeightDrop || nitroPitchTarget > CamNitroPitchUp {
+                nitroPoseSharp = 9.0
+            }
+            CamNitroHeightDrop = CamNitroHeightDrop + (nitroHeightTarget - CamNitroHeightDrop) * KartMath.CalcExpLerpFactor(nitroPoseSharp, dt)
+            CamNitroPitchUp = CamNitroPitchUp + (nitroPitchTarget - CamNitroPitchUp) * KartMath.CalcExpLerpFactor(nitroPoseSharp, dt)
             if math.Abs(CamNitroHeightDrop) < 0.005 { CamNitroHeightDrop = 0.0 }
             if math.Abs(CamNitroPitchUp) < 0.01 { CamNitroPitchUp = 0.0 }
 
             var camBackZ = -4.8 - fovInertiaZ - CamLagBack - boostPull - nitroBackPull
             if camBackZ > -4.95 { camBackZ = -4.95 }
-            if camBackZ < -6.00 { camBackZ = -6.00 }
+            var camBackMinZ = -6.00
+            if NitroCamBlend > 0.01 || nitroKick > 0.01 {
+                camBackMinZ = -6.05 - NitroCamBlend * 0.30 - nitroKick * 0.18
+                if camBackMinZ < -6.42 { camBackMinZ = -6.42 }
+            }
+            if camBackZ < camBackMinZ { camBackZ = camBackMinZ }
             if CrashCamSnapTimer > 0.0 {
                 camBackZ = CrashCamNearZ
                 CamBoostPullCurrent = 0.0
@@ -4343,11 +4448,18 @@ graph RacingMovement {
 
             var nitroBobX = 0.0
             var nitroBobY = 0.0
-            if cameraBoostActive {
-                nitroBobX = 0.0
-                nitroBobY = (math.Sin(ShakeTime * 24.0) * 0.018 + math.Sin(ShakeTime * 48.0) * 0.008) as float
+            var nitroBobZ = 0.0
+            if NitroCamBlend > 0.01 || nitroKick > 0.01 {
+                var bobRumble = nitroFeel * (0.60 + speedRatio * 0.40)
+                if ImpactTimer > 0.0 || CrashCamSnapTimer > 0.0 {
+                    bobRumble = bobRumble * 0.25
+                }
+                if bobRumble > 1.18 { bobRumble = 1.18 }
+                nitroBobX = (math.Sin(ShakeTime * 35.0) * 0.0035 * bobRumble) as float
+                nitroBobY = ((math.Sin(ShakeTime * 25.0) * 0.026 + math.Sin(ShakeTime * 50.0) * 0.010 + math.Cos(ShakeTime * 71.0) * 0.004) * bobRumble - 0.035 * nitroKick) as float
+                nitroBobZ = ((math.Sin(ShakeTime * 32.0) * 0.024 + math.Cos(ShakeTime * 59.0) * 0.010) * bobRumble - 0.055 * nitroKick * nitroTierFeel) as float
             }
-            var localOffset = Vector3{CurrentCamOffset + CamDriftSide + CamDriftSlipYaw * 0.02 + nitroBobX, BaseCamHeight + CurrentDropOffset + CamDriftHeightDrop + CamNitroHeightDrop + nitroBobY, camBackZ}
+            var localOffset = Vector3{CurrentCamOffset + CamDriftSide + CamDriftSlipYaw * 0.02 + nitroBobX, BaseCamHeight + CurrentDropOffset + CamDriftHeightDrop + CamNitroHeightDrop + nitroBobY, camBackZ + nitroBobZ}
             
             var rotatedOffset = math.RotateVector(localOffset, CamQuat)
             var lookAheadVec = math.RotateVector(Vector3{0.0, 0.0, CamLookAheadOffset}, CamQuat)
