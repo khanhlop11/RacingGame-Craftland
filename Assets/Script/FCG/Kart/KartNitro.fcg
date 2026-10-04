@@ -68,15 +68,15 @@ static graph KartNitro {
     }
 
     func CalcBoostTopMult(nitroBoostTier int) float {
-        if nitroBoostTier <= 1 { return 0.82 }
-        if nitroBoostTier == 2 { return 0.95 }
-        return 1.10
+        if nitroBoostTier <= 1 { return 0.92 }
+        if nitroBoostTier == 2 { return 0.96 }
+        return 1.00
     }
 
     func CalcBoostAccelMult(nitroBoostTier int) float {
-        if nitroBoostTier <= 1 { return 1.00 }
-        if nitroBoostTier == 2 { return 1.25 }
-        return 1.50
+        if nitroBoostTier <= 1 { return 2.20 }
+        if nitroBoostTier == 2 { return 2.80 }
+        return 3.50
     }
 
     func CalcBoostDecayMult(nitroBoostTier int) float {

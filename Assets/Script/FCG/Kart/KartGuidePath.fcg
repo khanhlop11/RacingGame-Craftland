@@ -1,0 +1,199 @@
+// KartGuidePath.fcg — Waypoint Guide Path (Racing Line Arrows)
+// Platform: Client
+// Purpose: Continuous Catmull-Rom Track Spine (20 Arrows lookahead extending from behind car to 45m ahead)
+import "Math.fcc" as math
+import "StdLibrary.fcc" as std
+import "List.fcc" as list
+
+[platform_client]
+static graph KartGuidePath {
+
+    func SetArrowsActive(arrows List<entity<Entity>>, active bool) {
+        if arrows == nil { return }
+        var count = list.Length(arrows as List<object>)
+        for i = 0, count, 1 {
+            var a = arrows[i]
+            if a != nil {
+                std.SetActive(a as entity, active)
+            }
+        }
+    }
+
+    // Tìm phân đoạn đường đua cục bộ mà xe đang thực sự chạy trên đó
+    func FindTrackSegmentLocal(wpX List<float>, wpZ List<float>, wpCount int, carX float, carZ float, hintSeg int, out var bestSeg int, out var bestDistAlong float) {
+        var minSq = 99999999.0
+        bestSeg = hintSeg
+        if bestSeg < 0 || bestSeg >= wpCount { bestSeg = 0 }
+        bestDistAlong = 0.0
+
+        for step = 0, 4, 1 {
+            var i = hintSeg + (step - 1)
+            while i < 0 { i += wpCount }
+            while i >= wpCount { i -= wpCount }
+
+            var nxt = i + 1
+            if nxt >= wpCount { nxt = 0 }
+
+            var sx = wpX[nxt] - wpX[i]
+            var sz = wpZ[nxt] - wpZ[i]
+            var slenSq = sx * sx + sz * sz
+            if slenSq < 0.01 { continue }
+
+            var toCarX = carX - wpX[i]
+            var toCarZ = carZ - wpZ[i]
+
+            // Tỷ lệ chiếu vuông góc t = (toCar . seg) / lenSq
+            var t = (toCarX * sx + toCarZ * sz) / slenSq
+            var clampedT = t
+            if clampedT < 0.0 { clampedT = 0.0 }
+            if clampedT > 1.0 { clampedT = 1.0 }
+
+            var closeX = wpX[i] + sx * clampedT
+            var closeZ = wpZ[i] + sz * clampedT
+            var dx = carX - closeX
+            var dz = carZ - closeZ
+            var dSq = dx * dx + dz * dz
+
+            if dSq < minSq {
+                minSq = dSq
+                bestSeg = i
+                var slen = math.Sqrt(slenSq)
+                bestDistAlong = clampedT * slen
+            }
+        }
+    }
+
+    // Đánh giá đường cong Catmull-Rom 3D và vector tiếp tuyến chuẩn hóa 2D
+    func EvalCatmullRom(p0X float, p0Y float, p0Z float, p1X float, p1Y float, p1Z float, p2X float, p2Y float, p2Z float, p3X float, p3Y float, p3Z float, u float, out var posX float, out var posY float, out var posZ float, out var dirX float, out var dirZ float) {
+        var u2 = u * u
+        var u3 = u2 * u
+
+        // Tọa độ 3D nội suy Catmull-Rom
+        posX = 0.5 * ((2.0 * p1X) + (-p0X + p2X) * u + (2.0 * p0X - 5.0 * p1X + 4.0 * p2X - p3X) * u2 + (-p0X + 3.0 * p1X - 3.0 * p2X + p3X) * u3)
+        posY = 0.5 * ((2.0 * p1Y) + (-p0Y + p2Y) * u + (2.0 * p0Y - 5.0 * p1Y + 4.0 * p2Y - p3Y) * u2 + (-p0Y + 3.0 * p1Y - 3.0 * p2Y + p3Y) * u3)
+        posZ = 0.5 * ((2.0 * p1Z) + (-p0Z + p2Z) * u + (2.0 * p0Z - 5.0 * p1Z + 4.0 * p2Z - p3Z) * u2 + (-p0Z + 3.0 * p1Z - 3.0 * p2Z + p3Z) * u3)
+
+        // Đạo hàm tiếp tuyến mượt mà trên mặt phẳng ngang X-Z
+        var aX = -p0X + p2X
+        var bX = 2.0 * p0X - 5.0 * p1X + 4.0 * p2X - p3X
+        var cX = -p0X + 3.0 * p1X - 3.0 * p2X + p3X
+        var dX = 0.5 * (aX + 2.0 * bX * u + 3.0 * cX * u2)
+
+        var aZ = -p0Z + p2Z
+        var bZ = 2.0 * p0Z - 5.0 * p1Z + 4.0 * p2Z - p3Z
+        var cZ = -p0Z + 3.0 * p1Z - 3.0 * p2Z + p3Z
+        var dZ = 0.5 * (aZ + 2.0 * bZ * u + 3.0 * cZ * u2)
+
+        var len = math.Sqrt(dX * dX + dZ * dZ)
+        if len > 0.001 {
+            dirX = dX / len
+            dirZ = dZ / len
+        } else {
+            dirX = p2X - p1X
+            dirZ = p2Z - p1Z
+            var fallbackLen = math.Sqrt(dirX * dirX + dirZ * dirZ)
+            if fallbackLen > 0.001 {
+                dirX = dirX / fallbackLen
+                dirZ = dirZ / fallbackLen
+            } else {
+                dirX = 0.0
+                dirZ = 1.0
+            }
+        }
+    }
+
+    // Lấy mẫu điểm và hướng tiếp tuyến trên tim đường cong Catmull-Rom
+    // Hỗ trợ cả khoảng cách âm (aheadDist < 0) để lấy các điểm phía sau xe
+    func SampleTrackCurve(wpX List<float>, wpY List<float>, wpZ List<float>, wpCount int, startSeg int, distAlong float, aheadDist float, out var ptX float, out var ptY float, out var ptZ float, out var dirX float, out var dirZ float) {
+        var remain = distAlong + aheadDist
+        var cur = startSeg
+
+        // Xử lý khoảng cách âm (lùi về phân đoạn phía sau xe)
+        for bStep = 0, 8, 1 {
+            if remain >= 0.0 { break }
+            cur -= 1
+            if cur < 0 { cur = wpCount - 1 }
+            var prevNxt = cur + 1
+            if prevNxt >= wpCount { prevNxt = 0 }
+            var pdx = wpX[prevNxt] - wpX[cur]
+            var pdz = wpZ[prevNxt] - wpZ[cur]
+            var plen = math.Sqrt(pdx * pdx + pdz * pdz)
+            if plen < 0.1 { plen = 0.1 }
+            remain += plen
+        }
+
+        for step = 0, 16, 1 {
+            var nxt = cur + 1
+            if nxt >= wpCount { nxt = 0 }
+
+            var dx = wpX[nxt] - wpX[cur]
+            var dz = wpZ[nxt] - wpZ[cur]
+            var segLen = math.Sqrt(dx * dx + dz * dz)
+            if segLen < 0.1 { segLen = 0.1 }
+
+            if remain <= segLen || step == 15 {
+                var u = remain / segLen
+                if u < 0.0 { u = 0.0 }
+                if u > 1.0 { u = 1.0 }
+
+                var p0 = cur - 1
+                if p0 < 0 { p0 = wpCount - 1 }
+                var p1 = cur
+                var p2 = nxt
+                var p3 = nxt + 1
+                if p3 >= wpCount { p3 = 0 }
+
+                EvalCatmullRom(wpX[p0], wpY[p0], wpZ[p0], wpX[p1], wpY[p1], wpZ[p1], wpX[p2], wpY[p2], wpZ[p2], wpX[p3], wpY[p3], wpZ[p3], u, out var resX, out var resY, out var resZ, out var resDirX, out var resDirZ)
+                ptX = resX
+                ptY = resY
+                ptZ = resZ
+                dirX = resDirX
+                dirZ = resDirZ
+                return
+            }
+
+            remain -= segLen
+            cur = nxt
+        }
+    }
+
+    // Cập nhật dải 20 mũi tên:
+    // - Bắt đầu từ sau đuôi xe (-3.5m) xuyên qua gầm xe và kéo dài ra phía trước ~45m
+    // - Nằm sát gần xe, người chơi luôn nhìn thấy đường dẫn ngay dưới bánh xe của mình
+    // - Ghim cố định vững chắc trên mặt đường (+0.12m nổi rõ chống chìm)
+    func UpdateGuideLine(arrows List<entity<Entity>>, carPos Vector3, kartModel entity<Entity>, wpX List<float>, wpY List<float>, wpZ List<float>, wpCount int, nearestWp int, curSpeedKmh float, scale float) {
+        if arrows == nil || wpCount < 2 || wpX == nil || wpY == nil || wpZ == nil { return }
+        var count = list.Length(arrows as List<object>)
+        if count <= 0 { return }
+
+        // 1. Phân đoạn thực tế của xe và khoảng cách đã đi
+        FindTrackSegmentLocal(wpX, wpZ, wpCount, carPos.X, carPos.Z, nearestWp, out var seg0, out var distAlong)
+
+        // 2. Tham số dải mũi tên: Bắt đầu từ sau xe (-3.5m) trải dài ra trước
+        // Khoảng cách giữa các mũi tên thu hẹp (1.35m -> 1.65m) giúp dải mũi tên dày đặc, liền mạch
+        var stepDist = 1.35 + (curSpeedKmh / 350.0) * 0.30
+        var startDist = -3.5
+
+        for i = 0, count, 1 {
+            var arrow = arrows[i]
+            if arrow == nil { continue }
+
+            var aheadDist = startDist + (i as float) * stepDist
+
+            // Lấy điểm trên tim đường cong Catmull-Rom cố định
+            SampleTrackCurve(wpX, wpY, wpZ, wpCount, seg0, distAlong, aheadDist, out var ptX, out var ptY, out var ptZ, out var dirX, out var dirZ)
+
+            // Điểm phía trước 0.8m để tính góc quay Yaw chính xác theo độ cong
+            SampleTrackCurve(wpX, wpY, wpZ, wpCount, seg0, distAlong, aheadDist + 0.8, out var nptX, out var nptY, out var nptZ, out var ndirX, out var ndirZ)
+            var yaw = math.ATan2(nptX - ptX, nptZ - ptZ)
+
+            // Nổi nhẹ +0.12m trên mặt đường để mũi tên to bản nhìn rõ ràng, không bị chìm
+            var groundY = ptY + 0.12
+
+            // Đặt mũi tên cố định trên tim đường cong mặt đất
+            arrow<Transform>.Position = Vector3{ptX, groundY, ptZ}
+            arrow<Transform>.Rotation = Vector3{0.0, yaw, 0.0}
+            arrow<Transform>.Scale = Vector3{scale, scale, scale}
+        }
+    }
+}

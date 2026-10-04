@@ -57,12 +57,12 @@ static graph KartPhysicsMath {
         
         // Launch boost: only applies at 0-20% speed range
         // Max multiplier capped at 2.0x (not 10x)
-        var launchThreshold = 0.2  // Only boost below 20% of max speed
+        var launchThreshold = 0.25
         
         if spdRatio < launchThreshold {
             // Smooth ramp from 2.0x at 0% to 1.0x at 20%
             var launchBlend = spdRatio / launchThreshold
-            return math.Lerp(2.0, 1.0, launchBlend) as float
+            return math.Lerp(2.2, 1.0, launchBlend) as float
         }
         
         // Above 20% speed: no multiplier (realistic 1:1 acceleration)

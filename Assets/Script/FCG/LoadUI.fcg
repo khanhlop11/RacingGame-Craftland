@@ -63,6 +63,11 @@ graph LoadUI {
     DirectionArrow entity<UIWidget>
     WrongWayWidget entity<UIWidget>
     LobbyTimerWidget entity<UIWidget>
+    TimeoutWidget entity<UIWidget>
+    TimeoutInitPos Vector3 = Vector3{0.0, 0.0, 0.0}
+    TimeoutInitSize Vector2 = Vector2{120.0, 50.0}
+    HasCachedTimeoutInit bool = false
+    TimeoutHasSentQuit bool = false
     LastSpeedKmh float = 0.0
     DirectionArrowAngle float = 0.0
     SpeedNeedle entity<UIWidget>
@@ -237,6 +242,24 @@ graph LoadUI {
         }
         if (LobbyTimerWidget as entity) != nil {
             LobbyTimerWidget<hud.UIWidget>.IsVisible = true
+        }
+
+        // Widget Timeout đếm ngược kết thúc trận đấu
+        TimeoutWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Timeout")
+        if (TimeoutWidget as entity) == nil {
+            TimeoutWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/TImeout")
+        }
+        if (TimeoutWidget as entity) == nil {
+            TimeoutWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Timeout")
+        }
+        if (TimeoutWidget as entity) == nil {
+            TimeoutWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/TImeout")
+        }
+        if (TimeoutWidget as entity) != nil {
+            TimeoutWidget<hud.UIWidget>.IsVisible = false
+            TimeoutInitPos = TimeoutWidget<hud.UIWidget>.AnchorPosition
+            TimeoutInitSize = TimeoutWidget<hud.UIWidget>.SizeDelta
+            HasCachedTimeoutInit = true
         }
 
         // Lấy tham chiếu Widget Timer đếm mili-giây (ưu tiên /txt_timer cùng root)
@@ -824,6 +847,79 @@ graph LoadUI {
             }
         }
 
+        // ==========================================
+        // TIMEOUT ĐẾM NGƯỢC KHI NGƯỜI ĐẦU TIÊN VỀ ĐÍCH
+        // ==========================================
+        if (TimeoutWidget as entity) == nil && (MyControlUI as entity) != nil {
+            TimeoutWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Timeout")
+            if (TimeoutWidget as entity) == nil {
+                TimeoutWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/TImeout")
+            }
+            if (TimeoutWidget as entity) == nil {
+                TimeoutWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Timeout")
+            }
+            if (TimeoutWidget as entity) == nil {
+                TimeoutWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/TImeout")
+            }
+            if (TimeoutWidget as entity) != nil && !HasCachedTimeoutInit {
+                TimeoutWidget<hud.UIWidget>.IsVisible = false
+                TimeoutInitPos = TimeoutWidget<hud.UIWidget>.AnchorPosition
+                TimeoutInitSize = TimeoutWidget<hud.UIWidget>.SizeDelta
+                HasCachedTimeoutInit = true
+            }
+        }
+
+        if isLobby || isCountingDown {
+            if (TimeoutWidget as entity) != nil {
+                TimeoutWidget<hud.UIWidget>.IsVisible = false
+                if HasCachedTimeoutInit {
+                    TimeoutWidget<hud.UIWidget>.AnchorPosition = TimeoutInitPos
+                    TimeoutWidget<hud.UIWidget>.SizeDelta = TimeoutInitSize
+                }
+            }
+            TimeoutHasSentQuit = false
+        } else if thisEntity<rm>.FirstFinishTimeoutActive {
+            if (TimeoutWidget as entity) != nil {
+                TimeoutWidget<hud.UIWidget>.IsVisible = true
+                var ffTimer = thisEntity<rm>.FirstFinishTimer
+                var ffWait = thisEntity<rm>.FirstFinishWaitTimer
+
+                if ffTimer > 0.0 {
+                    // Đang trong 30s đếm ngược: hiển thị số giây còn lại
+                    var secLeft = math.Ceil(ffTimer) as int
+                    if secLeft <= 0 { secLeft = 1 }
+                    TimeoutWidget<UIWidgetLabel>.Content = convert.ToString(secLeft) + "s"
+                    if HasCachedTimeoutInit {
+                        TimeoutWidget<hud.UIWidget>.AnchorPosition = TimeoutInitPos
+                        TimeoutWidget<hud.UIWidget>.SizeDelta = TimeoutInitSize
+                    }
+                } else if ffWait > 0.0 {
+                    // Trong 5s chờ sau 30s: thông báo trận đấu đã kết thúc và thứ hạng
+                    var myRank = thisEntity<rm>.CpPosition
+                    if thisEntity<rm>.CpIsRaceFinished && thisEntity<rm>.CpFinishPosition > 0 {
+                        myRank = thisEntity<rm>.CpFinishPosition
+                    }
+                    if myRank <= 0 { myRank = 1 }
+                    TimeoutWidget<UIWidgetLabel>.Content = "Trận đấu đã kết thúc\nThứ hạng của bạn là #" + convert.ToString(myRank)
+                    // Mở rộng size để hiển thị vừa 2 dòng text
+                    TimeoutWidget<hud.UIWidget>.AnchorPosition = Vector3{0.0, 30.0, 0.0}
+                    TimeoutWidget<hud.UIWidget>.SizeDelta = Vector2{700.0, 140.0}
+                    TimeoutWidget<UIWidgetLabel>.FontSize = 28
+                } else {
+                    // Hết 5s chờ: gọi thoát game phía Client (đồng bộ cùng Server QuitGameAtNextFrame)
+                    if !TimeoutHasSentQuit {
+                        TimeoutHasSentQuit = true
+                        player.QuitGameClient(false)
+                    }
+                }
+            }
+        } else {
+            if (TimeoutWidget as entity) != nil {
+                TimeoutWidget<hud.UIWidget>.IsVisible = false
+            }
+            TimeoutHasSentQuit = false
+        }
+
         // =========================================================
         // LERP CUỘN SỐ VÒNG ĐUA (LAP TICKER / SCROLL ANIMATION)
         // 0 = Chưa GO (-50, -100, -150)
@@ -997,7 +1093,7 @@ graph LoadUI {
             if (CurrentSpeedKmhText as entity) != nil {
                 LastSpeedKmh = thisEntity<rm>.UISpeedKmh
                 var uiSpeedKmh = math.Floor(LastSpeedKmh + 0.5) as float
-                CurrentSpeedKmhText<UIWidgetLabel>.Content = convert.NumToString(uiSpeedKmh, "0") + " kmm/h"
+                CurrentSpeedKmhText<UIWidgetLabel>.Content = convert.NumToString(uiSpeedKmh, "0") + " KM/H"
             } 
 
             // Cập nhật Text Vòng đua
@@ -1055,7 +1151,7 @@ graph LoadUI {
                     while relativeYaw < -180.0 { relativeYaw += 360.0 }
                     var absRelativeYaw = relativeYaw
                     if absRelativeYaw < 0.0 { absRelativeYaw = -absRelativeYaw }
-                    if absRelativeYaw >= WrongWayUiAngle && thisEntity<rm>.UISpeedKmh > 25.0 {
+                    if absRelativeYaw >= WrongWayUiAngle && thisEntity<rm>.UISpeedKmh > 12.5 {
                         WrongWayUiTimer += 0.2
                     } else {
                         WrongWayUiTimer -= 0.4

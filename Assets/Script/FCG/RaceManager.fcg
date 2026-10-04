@@ -11,11 +11,12 @@ import "Convert.fcc" as convert
 import "Strings.fcc" as strings
 import "./RacingMovementServer.fcg" as rms
 import "./KartRank.fcg" as kartRank
+import "Player.fcc" as player
 
 [platform_server]
 graph RaceManager {
     RaceState       int   = 0 
-    LobbyDurationConfig float = 30.0 // CẤU HÌNH THỜI GIAN PHÒNG CHỜ (Mặc định 30s để tiện test và tùy chỉnh)
+    LobbyDurationConfig float = 77.0 // CẤU HÌNH THỜI GIAN PHÒNG CHỜ (Mặc định 30s để tiện test và tùy chỉnh)
     GlobalLobbyTimer float = 20.0 // Đếm ngược phòng chờ đồng bộ toàn server
     CountdownTimer  float = 5.0   // 2.0s chờ camera chuyển góc + 3.0s đếm ngược 3-2-1
     HasSentCountdown bool = false
@@ -28,9 +29,9 @@ graph RaceManager {
     // =========================================================
     // CHECKPOINT / LAP CONFIG
     // =========================================================
-    TotalLaps           int   = 1     // Số vòng đua (Đặt = 0 để test: cán qua vạch xuất phát/CP đầu tiên là về đích và dừng xe ngay)
+    TotalLaps           int   = 1   // Số vòng đua (Đặt = 0 để test: cán qua vạch xuất phát/CP đầu tiên là về đích và dừng xe ngay)
     TotalCheckpoints    int   = 0     // Auto đổi theo marker CP_; không dùng tọa độ hardcode cũ
-    CheckpointRadius    float = 12.0  // Bán kính detect checkpoint (world units)
+    CheckpointRadius    float = 25.0  // Bán kính detect checkpoint (mở rộng lên 25m để bao quát toàn bộ mặt đường và drift)
     MaxScannedCheckpoints int = 64    // Giới hạn marker CP_00..CP_63
     ScannedCheckpointMaxIndex int = -1
     TotalWaypoints      int   = 0     // Auto đổi theo marker WP_; dùng cho wrong-way/racing line
@@ -82,6 +83,8 @@ graph RaceManager {
     FinishCount         int   = 0            // Số người đã về đích
     RaceTimer           float = 0.0          // Thời gian đua (giây)
     RealtimeRankTimer   float = 0.0          // Timer đồng bộ xếp hạng real-time theo Waypoint
+    FirstFinishTimeoutActive bool  = false   // Đang đếm ngược kết thúc trận đấu
+    FirstFinishTimer         float = 0.0     // Timer đếm ngược 35s (30s timeout + 5s thông báo kết quả)
 
     // =========================================================
     // EVENT PROTOCOL (tái sử dụng onRaceCommand đã đăng ký)
@@ -300,7 +303,7 @@ graph RaceManager {
                     } else if TotalCheckpoints >= 2 {
                         calculatedYaw = CalcYawBetweenCPs(0, 1)
                     }
-                    StartSlotYaw[slotIndex] = calculatedYaw
+                    StartSlotYaw[slotIndex] = EnforceStartForwardYaw(calculatedYaw)
                     
                     if !HasStartSlot[slotIndex] {
                         TotalStartSlots += 1
@@ -345,6 +348,7 @@ graph RaceManager {
 
         var initYaw = 0.0
         if TotalWaypoints >= 2 { initYaw = CalcStartYawByWaypoints() } else if TotalCheckpoints >= 2 { initYaw = CalcYawBetweenCPs(0, 1) }
+        initYaw = EnforceStartForwardYaw(initYaw)
         for i = 0, MaxPlayers, 1 {
             PlayerEntities[i] = nil
             PlayerNextCP[i] = 0
@@ -358,7 +362,7 @@ graph RaceManager {
                 PlayerRespawnY[i] = StartSlotY[i]
                 PlayerRespawnZ[i] = StartSlotZ[i]
                 if math.Abs(StartSlotYaw[i]) > 0.001 {
-                    PlayerRespawnYaw[i] = StartSlotYaw[i]
+                    PlayerRespawnYaw[i] = EnforceStartForwardYaw(StartSlotYaw[i])
                 } else {
                     PlayerRespawnYaw[i] = initYaw
                 }
@@ -609,6 +613,8 @@ graph RaceManager {
                 if RaceState == 0 {
                     var curSec = math.Floor(GlobalLobbyTimer) as int
                     std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{6000 + curSec})
+                } else if RaceState == 2 {
+                    std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{2})
                 }
                 return i
             }
@@ -662,6 +668,22 @@ graph RaceManager {
 
     func CalcStartYawByWaypoints() float {
         return CalcYawByWaypointAt(CheckpointX[0], CheckpointZ[0])
+    }
+
+    func GetCanonicalStartForwardYaw() float {
+        if TotalCheckpoints >= 2 && CheckpointX != nil {
+            return CalcYawBetweenCPs(0, 1)
+        }
+        return 178.3
+    }
+
+    func EnforceStartForwardYaw(yaw float) float {
+        var canonical = GetCanonicalStartForwardYaw()
+        var diff = math.Abs(NormalizeYaw(yaw - canonical))
+        if diff > 60.0 {
+            return canonical
+        }
+        return yaw
     }
 
     // Tính progress score cho ranking dựa trên Checkpoint + khoảng cách tới CP tiếp theo:
@@ -821,6 +843,9 @@ graph RaceManager {
                 CountdownTimer = 0.0
                 RaceState = 2
                 RaceTimer = 0.0
+                FinishCount = 0
+                FirstFinishTimeoutActive = false
+                FirstFinishTimer = 0.0
 
                 var allPlayers = std.GetAllPlayers()
                 var pCount = list.Length(allPlayers as List<object>)
@@ -835,7 +860,6 @@ graph RaceManager {
                             PlayerFinishOrder[slot] = 0
                             SendCheckpointUpdate(p, slot)
                         }
-                        SyncAllWaypointsToPlayer(p)
                         std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{2})
                     }
                 }
@@ -869,16 +893,33 @@ graph RaceManager {
                 var cpX = CheckpointX[nextCP]
                 var cpZ = CheckpointZ[nextCP]
 
+                var hitCP = -1
                 var dist = DistXZ(playerPos.X, playerPos.Z, cpX, cpZ)
                 if dist < CheckpointRadius {
+                    hitCP = nextCP
+                } else if TotalCheckpoints >= 3 {
+                    // Cơ chế bảo vệ: nếu xe chạy quá nhanh lỡ bỏ qua nextCP nhưng đã chạm tới CP kế tiếp
+                    var peekNext = nextCP + 1
+                    if peekNext >= TotalCheckpoints { peekNext = 0 }
+                    var peekX = CheckpointX[peekNext]
+                    var peekZ = CheckpointZ[peekNext]
+                    var distPeek = DistXZ(playerPos.X, playerPos.Z, peekX, peekZ)
+                    if distPeek < CheckpointRadius {
+                        hitCP = peekNext
+                    }
+                }
+
+                if hitCP >= 0 {
                     // ĐÃ ĐI QUA CHECKPOINT!
                     var currentLap = PlayerLap[slot] as int
-                    var cpY = CheckpointY[nextCP]
+                    var cpY = CheckpointY[hitCP]
+                    var hitCpX = CheckpointX[hitCP]
+                    var hitCpZ = CheckpointZ[hitCP]
 
                     var isFinishPass = false
                     if TotalLaps <= 0 {
                         isFinishPass = true
-                    } else if nextCP == 0 && currentLap >= TotalLaps {
+                    } else if hitCP == 0 && currentLap >= TotalLaps {
                         isFinishPass = true
                     }
 
@@ -894,17 +935,29 @@ graph RaceManager {
                         var finishMs = math.Round(RaceTimer * 1000.0) as int
                         
                         kartRank.CheckAndSaveRecord(p, finishMs, out var isNewRecord)
-                    } else if nextCP == 0 {
+
+                        // NGƯỜI ĐẦU TIÊN VỀ ĐÍCH: Bắt đầu đếm ngược 30s + 5s cho toàn bộ người chơi trong phòng
+                        if FinishCount == 1 {
+                            FirstFinishTimeoutActive = true
+                            FirstFinishTimer = 35.0
+                            for b = 0, pCount, 1 {
+                                var pb = allPlayers[b] as entity<Player>
+                                if pb != nil {
+                                    std.DispatchEventToEntity(onRaceCommand, pb, PlatformType.Client, List<int>{8030})
+                                }
+                            }
+                        }
+                    } else if hitCP == 0 {
                         // Sang vòng tiếp — CP0 cũng là respawn point cho vòng mới
                         currentLap += 1
                         PlayerLap[slot] = currentLap
                         PlayerNextCP[slot] = 1
-                        PlayerRespawnX[slot] = cpX
+                        PlayerRespawnX[slot] = hitCpX
                         PlayerRespawnY[slot] = cpY
-                        PlayerRespawnZ[slot] = cpZ
+                        PlayerRespawnZ[slot] = hitCpZ
                         var respawnYaw = 0.0
                         if TotalWaypoints >= 2 {
-                            respawnYaw = CalcYawByWaypointAt(cpX, cpZ)
+                            respawnYaw = CalcYawByWaypointAt(hitCpX, hitCpZ)
                         } else {
                             respawnYaw = CalcYawBetweenCPs(0, 1)
                         }
@@ -912,23 +965,23 @@ graph RaceManager {
                         // LogInfo("[RaceManager] 🔄 Player " + p<Entity>.Name + " vào vòng " + convert.ToString(currentLap))
                     } else {
                         // CHECKPOINT THƯỜNG
-                        PlayerRespawnX[slot] = cpX
+                        PlayerRespawnX[slot] = hitCpX
                         PlayerRespawnY[slot] = cpY
-                        PlayerRespawnZ[slot] = cpZ
+                        PlayerRespawnZ[slot] = hitCpZ
 
-                        var nextIndex = nextCP + 1
+                        var nextIndex = hitCP + 1
                         if nextIndex >= TotalCheckpoints {
                             nextIndex = 0
                         }
                         var respawnYaw = 0.0
                         if TotalWaypoints >= 2 {
-                            respawnYaw = CalcYawByWaypointAt(cpX, cpZ)
+                            respawnYaw = CalcYawByWaypointAt(hitCpX, hitCpZ)
                         } else {
-                            respawnYaw = CalcYawBetweenCPs(nextCP, nextIndex)
+                            respawnYaw = CalcYawBetweenCPs(hitCP, nextIndex)
                         }
                         PlayerRespawnYaw[slot] = respawnYaw
                         PlayerNextCP[slot] = nextIndex
-                        // LogInfo("[RaceManager] ✅ Player " + p<Entity>.Name + " qua CP" + convert.ToString(nextCP))
+                        // LogInfo("[RaceManager] ✅ Player " + p<Entity>.Name + " qua CP" + convert.ToString(hitCP))
                     }
 
                     // Gửi cập nhật cho player này
@@ -964,8 +1017,25 @@ graph RaceManager {
                     }
                 }
             }
+
+            // ĐẾM NGƯỢC KẾT THÚC TRẬN ĐẤU KHI CÓ NGƯỜI ĐẦU TIÊN VỀ ĐÍCH
+            if FirstFinishTimeoutActive {
+                FirstFinishTimer -= dt
+                if FirstFinishTimer <= 0.0 {
+                    FirstFinishTimeoutActive = false
+                    var allNow = std.GetAllPlayers()
+                    var cNow = list.Length(allNow as List<object>)
+                    for q = 0, cNow, 1 {
+                        var pq = allNow[q] as entity<Player>
+                        if pq != nil {
+                            player.QuitGameAtNextFrame(pq)
+                        }
+                    }
+                }
+            }
         }
     }
+
 
     // Phản hồi yêu cầu của riêng từng Player
     event RequestRaceState(playerEnt entity<Player>) {

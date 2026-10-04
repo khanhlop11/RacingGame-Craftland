@@ -49,7 +49,7 @@ graph RacingMovementServer {
     MaxRankingSlots int = 5             // Số người chơi hiển thị (Map 5 người)
     BoardSlotX float = -580.0           // Tọa độ X của ControlBoard theo editor
     BoardHighlightX float = -649.0      // Tọa độ X của MyHighlightFrame theo editor
-    BoardStartY float = 280.0           // Cao độ Top 1 (tăng 140 từ 140 lên 280 theo yêu cầu)
+    BoardStartY float = 140.0           // Cao độ Top 1 khớp tọa độ editor
     BoardSpacingY float = 70.0          // Khoảng cách giữa các hàng
     HighlightOffsetY float = 42.0       // Độ lệch Y của MyHighlightFrame so với ControlBoard (182 - 140 = 42)
 

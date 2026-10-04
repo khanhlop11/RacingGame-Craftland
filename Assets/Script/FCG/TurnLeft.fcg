@@ -13,7 +13,7 @@ graph TurnLeft {
         KartInputActions.PressTurnLeft(p)
     }
 
-    // NHẤN ĐÚP: Kích hoạt Drift khi nhấp đúp rẽ trái
+    // // NHẤN ĐÚP: Kích hoạt Drift khi nhấp đúp rẽ trái
     event OnDoubleTapped(p entity<Player>) {
         KartInputActions.DoubleTapTurnLeft(p)
     }
