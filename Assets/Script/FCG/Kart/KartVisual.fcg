@@ -2,6 +2,7 @@ import "StdLibrary.fcc" as std
 import "List.fcc" as list
 import "Strings.fcc" as strings
 import "Math.fcc" as math
+import "Playable.fcc" as playable
 
 // ============================================================
 // KartVisual.fcg
@@ -98,7 +99,12 @@ static graph KartVisual {
         var nCount = list.Length(nitroEffects as List<object>)
         for i = 0, nCount, 1 {
             var ef = nitroEffects[i] as entity<Entity>
-            if ef != nil { std.SetActive(ef as entity, isBoosting) }
+            if ef != nil {
+                std.SetActive(ef as entity, isBoosting)
+                if isBoosting {
+                    playable.Play(ef as entity<Playable>, true)
+                }
+            }
         }
     }
 

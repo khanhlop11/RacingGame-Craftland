@@ -48,36 +48,36 @@ graph RacingMovement {
     // =========================================================
     SpeedUnitScale      float = 4.0    // Project arcade calibration: 1 physics unit = 144 display km/h (36 x 4)
 
-    TopSpeed            float = 365.0    // Tốc độ tối đa khi chạy thẳng (chạm 90% của Nitro cấp 3 = 405.0)
+    TopSpeed            float = 365.0    // Tốc độ tối đa khi chạy thẳng
     AccelLerpRate       float = 0.18     // Tăng tốc arcade (tăng độ bốc xuất phát lúc đầu)
-    BoostLerpRate       float = 1.0      // Lerp rate khi đang boost
+    BoostLerpRate       float = 1.2      // Lerp rate khi đang boost
     BrakeLerpRate       float = 4.5      // Phanh có lực nhưng không làm xe chết tốc đột ngột
     ReverseSpeed        float = 30.0     // Tốc độ tối đa khi chạy lùi (quay lại trước khi tăng 30%)
     ReverseLerpRate     float = 1.0      // Lerp rate khi chạy lùi (quay lại trước khi tăng 30%)
     Grip                float = 0.94     // Giảm độ dính để xe có load/slip tự nhiên
-    Steer               float = 1.30     // Cua thường: giảm từ 1.70 xuống 1.30 để bớt gắt, đầm chắc
-    DriftSteer          float = 1.90     // Cua drift: giảm từ 2.50 xuống 1.90 để ôm cua mượt và êm hơn
+    Steer               float = 1.85     // Cua thường: tăng từ 1.30 lên 1.85 để ôm cua nhạy bén, dứt khoát không bị thiếu lái
+    DriftSteer          float = 2.55     // Cua drift: tăng từ 1.90 lên 2.55 để vào drift lanh, nhẹ và ôm cua ngọt (chuẩn Ace Racer / Asphalt 8)
     
     // --- Tỷ lệ tốc độ ---
     TurnSpeedRatio      float = 0.95     // Cua thường: cap 95% TopSpeed
-    DriftSustainRatio   float = 0.72     // Giữ momentum để thoát cua không bị hụt tốc
-    DriftBrakeMult      float = 3.2      // Hãm drift mềm hơn, ưu tiên giữ nhịp đua
-    DriftOverspeedBrakeMult float = 4.6  // Hãm overspeed mượt hơn sau Nitro
-    DriftEntryDecelMult float = 0.28     // Chỉ hãm nhẹ 1 lần khi vào drift (smart drift)
-    DriftTurnSpeedRatio float = 0.76     // Ôm cua sâu nhưng không bị rơi tốc quá nhiều
+    DriftSustainRatio   float = 0.88     // Giữ đà lướt tốc độ cao (88%), không bị ghìm hụt tốc khi drift
+    DriftBrakeMult      float = 1.6      // Hãm drift nhẹ nhàng, giữ trớn lướt xe như Asphalt 8
+    DriftOverspeedBrakeMult float = 3.5  // Hãm overspeed mượt hơn sau Nitro
+    DriftEntryDecelMult float = 0.15     // Vào drift êm, không bị khựng xe một nhịp
+    DriftTurnSpeedRatio float = 0.88     // Ôm cua sâu nhưng vẫn giữ tốc độ cực tốt (88%)
 
     // --- Arcade drift flow (S-curve / chain / mobile smart drift) ---
     DriftFlowHoldTime   float = 0.05     // Release gần như tức thì; chỉ giữ micro-carry chống gãy xe
-    DriftEnterSharp     float = 6.2      // Entry khoảng 0.16s, tránh giật đầu xe
-    DriftExitSharp      float = 1.8      // Thu slide vừa đủ cho S-curve và chuyển hướng liên tục
+    DriftEnterSharp     float = 7.5      // Vào drift nhanh nhạy, bứt góc tức thì
+    DriftExitSharp      float = 5.2      // Thu slide dứt khoát (tăng từ 1.8 lên 5.2), nhả nút là thoát drift ngay không bị lết lâu
     DriftLatSlideGain   float = 0.06     // Giảm trượt dạt ngang để xe không bị quăng đuôi
-    DriftLatGripKeep    float = 0.90     // Tăng bám ngang khi drift để xe giữ đường chắc chắn
+    DriftLatGripKeep    float = 0.88     // Tăng bám ngang khi drift để xe giữ đường chắc chắn
     DriftCentrifugalGain float = 0.04    // Giảm lực ly tâm đẩy văng ngang đuôi xe
-    DriftSteerAuthority float = 1.05     // Trợ lực cua drift êm ái
-    DriftYawAssist      float = 6.5      // Trợ lực xoay thân vừa phải, bớt gắt
-    CounterSteerBoost   float = 0.20     // Trả lái linh hoạt
-    DriftSlipRetain     float = 0.20     // Giảm quán tính trượt dạt ngang
-    DriftSlipDecay      float = 4.2      // Trả xe ổn định nhanh hơn
+    DriftSteerAuthority float = 1.15     // Trợ lực cua drift nhẹ nhàng, thanh thoát
+    DriftYawAssist      float = 9.5      // Trợ lực xoay thân xe nhạy bén, hết cảm giác nặng lái
+    CounterSteerBoost   float = 0.45     // Trả lái linh hoạt, thoát cua dứt khoát
+    DriftSlipRetain     float = 0.15     // Giảm quán tính trượt dạt ngang
+    DriftSlipDecay      float = 8.0      // Triệt tiêu quán tính trượt nhanh (tăng từ 4.2 lên 8.0), thoát drift dứt khoát
     // Velocity alignment sharpness per-state
     // Higher = xe thật sự đổi hướng theo yaw nhanh hơn; lower = trượt thẳng nhiều hơn.
     VelAlignGrounded    float = 16.0     // Bám chặt theo hướng đầu xe khi cua thường, triệt tiêu quăng ngang
@@ -125,6 +125,8 @@ graph RacingMovement {
     WallSlideFriction    float = 0.95     // Engine-native wall response; không can thiệp vận tốc tiếp tuyến
     WallScrapeDecelRate  float = 0.32     // Legacy tuning value; side scrape preserves tangent velocity
     WallScrapeMinAccelMult float = 0.96  // Giữ 96% gia tốc khi cạ tường để không bị hụt ga
+    WallAlignSharpness   float = 14.0     // Tốc độ bẻ hướng xe song song theo mặt tường (rad/s) khi đâm chéo
+    WallUnstickPush      float = 8.0      // Lực đẩy tách khỏi tường khi người chơi bấm cua ngược ra để hết cạ
     WallAntiClimbDownForce float = 120.0     // Ép xe xuống khi va hàng rào/tường để tránh sphere leo mép
     WallUpVelocityClamp  float = -2.0      // Không cho vận tốc Y dương khi đang đâm wall
     WallStopForwardKeep  float = 0.12      // Giữ một phần momentum sau va chạm trực diện
@@ -134,8 +136,8 @@ graph RacingMovement {
     CrashCamNearZ        float = -2.6     // Camera snap gần khi đâm, không lerp
 
     // --- Nitro (Asphalt 8 style) ---
-    BoostTopSpeed       float = 405.0    // Tốc độ tối đa xé gió khi xịt Nitro (quay lại trước khi tăng 30%)
-    NitroChargeRate     float = 50.0      // Nạp Nitro gấp đôi khi drift
+    BoostTopSpeed       float = 405.0    // Tốc độ tối đa xé gió khi xịt Nitro
+    NitroChargeRate     float = 95.0     // Nạp điểm Nitro hồi lại thanh cực nhanh (tăng gần gấp đôi x1.9)
     NitroDrainRate      float = 7.0       // Giảm 30% tiêu hao -> Nitro xịt được lâu hơn (~14s liên tục)
     MaxNitroCharge      float = 100.0     // Dung lượng bình Nitro chuẩn 100%
 
@@ -187,21 +189,24 @@ graph RacingMovement {
     CameraWatchdogTimer float = 0.0
 
     // Cinematic Intro Flycam (Client-Only phòng chờ, quét động từ IntroCameraRoot)
-    IsIntroCamActive       bool  = true
-    IntroShotIndex         int   = 0
-    IntroShotTimer         float = 0.0
-    IntroShotDuration      float = 8.0     // Thời lượng mỗi góc quay Intro (chiếu chậm lại gấp 2 lần: 4.0s -> 8.0s)
-    IntroWatchdogTimer     float = 0.0
-    HasScannedIntroCameras bool  = false
-    TotalIntroShots        int   = 0
+    IsIntroCamActive           bool  = true
+    InitialDefaultCamDuration  float = 20.0    // Thời gian giữ nguyên camera mặc định khi mới vào game (20s)
+    InitialDefaultCamTimer     float = 0.0     // Timer đếm thời gian giữ camera mặc định
+    HasSwitchedToIntroCam      bool  = false   // Đã bắt đầu chuyển sang chuỗi Intro Camera sau 20s
+    IntroShotIndex             int   = 0
+    IntroShotTimer             float = 0.0
+    IntroShotDuration          float = 3.5     // Thời lượng mỗi góc quay Intro (3.5s x 4 shot = 14s)
+    IntroWatchdogTimer         float = 0.0
+    HasScannedIntroCameras     bool  = false
+    TotalIntroShots            int   = 4
 
     // Cinematic Track Flyby (Flycam từ WP 51 về WP 1 rồi đáp sau đuôi xe)
     LobbySmoothTimer           float   = 60.0
     HasStartedFinalSectorFlyby bool    = false
     FlybyInitialized           bool    = false
     FlybyRunTimer              float   = 0.0
-    FlybyStartWp               int     = 51     // Waypoint bắt đầu Flycam (WP 51 -> WP 1 -> Đuôi xe xuất phát)
-    FlybyTotalDuration         float   = 40.0   // Thời gian Flycam lướt từ WP 51 về vạch xuất phát (giây) - Đã chỉnh chậm 1 nửa (40s) theo yêu cầu
+    FlybyStartWp               int     = 20     // Waypoint bắt đầu Flycam (WP 20 -> WP 1 -> Đuôi xe xuất phát)
+    FlybyTotalDuration         float   = 10.0   // Thời gian Flycam lướt từ WP 20 về vạch xuất phát (10 giây cuối)
     FlybyCamHeight             float   = 2.8    // Độ cao camera so với mặt đường
     FlybySpeedMult             float   = 1.0
     FlybyCurrentCamPos         Vector3 = Vector3{0.0, 0.0, 0.0}
@@ -209,6 +214,13 @@ graph RacingMovement {
     FlybyDist                  List<float> = nil
     FlybyTotalDist             float   = 0.0
     IntroAllShotsCompleted     bool    = false  // Đã chiếu trọn vẹn 1 lần tất cả góc Intro Camera
+    // Cinematic Letterbox UI & Shutter Blackout Transition
+    CinematicBarTargetHeight   float   = 0.0    // 0.0: ẩn, 110.0: viền điện ảnh 21:9 khuất nhiều, 400.0: đóng đen kín màn hình
+    CinematicBarCurrentHeight  float   = 0.0    // Chiều cao thực tế đang áp dụng (smooth lerp)
+    IsIntroShutterActive       bool    = false  // Trạng thái Shutter Blackout giữa Intro và Flycam
+    IntroShutterTimer          float   = 0.0    // Timer của Shutter Transition
+    IntroShutterDuration       float   = 2.20   // Tổng thời lượng Shutter (0.95s đóng -> nghỉ tĩnh lặng 0.30s -> 0.95s mở)
+    IntroShutterCutDone        bool    = false  // Cờ đánh dấu đã cut cam sang WP 20 trong bóng tối
 
     // Cinematic Swoop-In Transition (Flycam -> Car Chase Cam)
     IsIntroBlendingToCar   bool    = false
@@ -264,30 +276,30 @@ graph RacingMovement {
     CamBoostLagPulse   float = 2.8   // Pulse Nitro rõ nhưng vẫn kiểm soát được khung hình
     CamFovBreathAmp    float = 3.5       // Speed sensation rõ nhưng không gây méo/hoa mắt
     CamCatchUpSharp    float = 15.0
-    CamCollisionBuffer float = 0.35     // Kéo camera cách tường/núi một khoảng để tránh xuyên vật thể
+    CamCollisionBuffer float = 0.55     // Kéo camera cách tường/núi một khoảng để tránh xuyên vật thể
     CamCollisionMinDist float = 1.2     // Khoảng gần xe tối thiểu khi camera bị ép sát
 
     // Camera Base Perspective (AAA Arcade / Asphalt 8 / Ace Racer framing)
     // Nâng camera và lùi xa vừa đủ để triệt tiêu biến dạng góc rộng, giữ dáng xe thon gọn và tầm nhìn rộng
-    BaseCamHeight      float = 0.52     // Nâng lên 0.52m tương thích với cự ly lùi xa hơn, bao quát mặt đường
-    BaseCamPitch       float = 6.2      // Góc nhìn chúc 6.2° xuống xe và mặt đường phía trước
+    BaseCamHeight      float = 1.15     // Nâng cao camera lên 1.15m để bao quát rõ mặt đường phía trước qua mui xe
+    BaseCamPitch       float = 6.5      // Góc nhìn chúc 6.5° xuống xe và mặt đường phía trước
 
     // Asphalt 8 / Ace Racer Drift Camera: hạ thêm + ngước thêm + nghiêng Dutch Tilt + liếc vào thân xe
     CamDriftHeightDrop float = 0.0      // Runtime: current Y drop offset khi drift
     CamDriftPitchUp    float = 0.0      // Runtime: current pitch up offset khi drift
     CamDriftYawInward  float = 0.0      // Runtime: current inward yaw pan khi drift (liếc máy quay vào hông/bánh xe)
-    CamDriftHeightDropMax float = -0.17 // Drift: giữ nguyên cao độ góc drift chuẩn đã ổn (0.22 - 0.17 = 0.05m)
-    CamDriftPitchUpMax float = 3.5      // Drift: giữ nguyên góc ngước chuẩn đã ổn (0.0 + 3.5 = +3.5°)
+    CamDriftHeightDropMax float = -0.04 // Giữ độ cao camera ổn định khi drift, không hạ sát đất
+    CamDriftPitchUpMax float = 1.2      // Giảm góc chúc thêm khi drift để không mất tầm nhìn xa
     CamDriftYawInwardMax float = 5.0    // Drift: liếc rõ hơn vào thân xe và apex
 
-    // Asphalt 8 / Ace Racer Nitro Camera: hạ thấp + ngước nhìn luồng lửa phản lực ống xả
+    // Asphalt 8 / Ace Racer Nitro Camera: giữ tầm nhìn thoáng khi bật Nitro
     CamNitroHeightDrop float = 0.0      // Runtime: current Y drop khi Nitro
     CamNitroPitchUp    float = 0.0      // Runtime: current pitch up khi Nitro
     NitroCamBlend      float = 0.0      // Camera-only boost feel blend; does not affect vehicle physics
     NitroCamKickTimer  float = 0.0      // Short camera punch window after Nitro activation
     NitroCamKickDuration float = 0.52
-    CamNitroHeightDropMax float = -0.10 // Nitro: giữ nguyên cao độ ống xả chuẩn đã ổn (0.22 - 0.10 = 0.12m)
-    CamNitroPitchUpMax float = 3.5      // Nitro: ngước thêm nhìn vào luồng phản lực
+    CamNitroHeightDropMax float = 0.0   // Không hạ thấp camera khi xịt Nitro
+    CamNitroPitchUpMax float = 1.0      // Giữ góc nhìn thẳng thoáng khi Nitro
 
     // Drift Entry Dip (nhún phuộc + chúi mũi khi vào drift)
     DriftEntryDipPitch float = 0.0      // Runtime: góc chúi mũi xe hiện tại
@@ -422,19 +434,24 @@ graph RacingMovement {
     ScrapeHitNorm         Vector3 = Vector3{0.0, 0.0, 0.0} // Pháp tuyến tường tại điểm cạ
     ScrapeDist            float = 0.0    // Khoảng cách tới tường
     ScrapeLogTimer        float = 0.0    // Cooldown log console để không spam
+    WallDeflectLogTimer   float = 0.0    // Cooldown log bẻ hướng theo tường độc lập
+    WallScrapeStickTimer  float = 0.0    // Bộ đệm duy trì bám tường chống chattering / giật góc
+    ActiveWallNormX       float = 0.0    // Pháp tuyến tường đang bám X
+    ActiveWallNormZ       float = 0.0    // Pháp tuyến tường đang bám Z
+    ScrapeCamShakeCooldown float = 0.0    // Cooldown rung camera khi cạ tường
     // ────────────────────────────────────────────────────────────────
 
     // ── TRACTION RECOVERY (Feature 1) ────────────────────────────────
     // Smooth lateral velocity scrub after exiting drift so the kart
     // feels planted instead of floating sideways.
-    TractionRecoverySharp float = 10.0   // Trả grip mượt, giữ được controlled slide khi thoát cua
+    TractionRecoverySharp float = 16.0   // Trả grip dứt khoát, triệt tiêu trượt ngang nhanh
     TractionRecoveryTimer float = 0.0   // Counts UP from drift-exit; used to ramp recovery blend
-    TractionRecoveryWindow float = 0.65  // Seconds over which full grip returns
+    TractionRecoveryWindow float = 0.22  // Hồi phục grip 100% cực nhanh trong 0.22s (giảm từ 0.65s để không bị lết lâu)
     // ────────────────────────────────────────────────────────────────
 
     // ── DRIFT ENTRY KICK (Feature 2) ─────────────────────────────────
     // One-shot lateral impulse when drift begins to create rear-swing feel.
-    DriftEntryKickPower float = 0.05    // Giảm rear swing kick khi vào drift để không bị giật quăng đuôi
+    DriftEntryKickPower float = 0.16    // Rear swing kick nhạy và bén chuẩn Ace Racer (tăng từ 0.05 lên 0.16)
     DriftEntryKickDone  bool = false    // Guard: only fire once per drift entry
     // ────────────────────────────────────────────────────────────────
 
@@ -692,18 +709,7 @@ graph RacingMovement {
         if FlybyDist == nil {
             FlybyDist = list.New(64, 64) as List<float>
         }
-        if IntroP_Start == nil {
-            IntroP_Start = list.New(8, 8) as List<Vector3>
-            IntroP_End   = list.New(8, 8) as List<Vector3>
-            IntroR_Start = list.New(8, 8) as List<Vector3>
-            IntroR_End   = list.New(8, 8) as List<Vector3>
-            for initI = 0, 8, 1 {
-                IntroP_Start[initI] = Vector3{0.0, 0.0, 0.0}
-                IntroP_End[initI]   = Vector3{0.0, 0.0, 0.0}
-                IntroR_Start[initI] = Vector3{0.0, 0.0, 0.0}
-                IntroR_End[initI]   = Vector3{0.0, 0.0, 0.0}
-            }
-        }
+        InitDefaultIntroCameraData()
         if ReplayChunksPos == nil {
             ReplayChunksPos   = list.New(0, 20) as List<List<Vector3>>
             ReplayChunksRot   = list.New(0, 20) as List<List<Quaternion>>
@@ -791,19 +797,8 @@ graph RacingMovement {
         CurrentCamPos = PrevPosition
         CurrentDynamicGrip = Grip
 
-        // Khởi tạo danh sách các góc Intro Camera (quét động từ PointRoot/IntroCameraRoot)
-        IntroP_Start = list.New(8, 8) as List<Vector3>
-        IntroP_End   = list.New(8, 8) as List<Vector3>
-        IntroR_Start = list.New(8, 8) as List<Vector3>
-        IntroR_End   = list.New(8, 8) as List<Vector3>
-        for initI = 0, 8, 1 {
-            IntroP_Start[initI] = Vector3{0.0, 0.0, 0.0}
-            IntroP_End[initI]   = Vector3{0.0, 0.0, 0.0}
-            IntroR_Start[initI] = Vector3{0.0, 0.0, 0.0}
-            IntroR_End[initI]   = Vector3{0.0, 0.0, 0.0}
-        }
-        TotalIntroShots = 0
-        HasScannedIntroCameras = false
+        // Khởi tạo danh sách các góc Intro Camera với dữ liệu thực tế từ Scene
+        InitDefaultIntroCameraData()
         ScanIntroCameras()
 
         // --- TẠO CAMERA MÁY KHÁCH ĐỘC LẬP TỪ RACINGMOVEMENT ---
@@ -816,7 +811,7 @@ graph RacingMovement {
             var camEnt = MyClientCam as entity<Entity>
             camEnt<Transform>.Position = IntroP_Start[0]
             camEnt<Transform>.Rotation = IntroR_Start[0]
-            camera.SwitchCustomCameraClient(MyClientCam, camera.CameraTransitionType.Default, 0.0)
+            // Chưa switch camera ngay: giữ nguyên camera mặc định trong 20s đầu
         }
 
         // =================================================================
@@ -969,7 +964,9 @@ graph RacingMovement {
             if ClientVisualCar != nil {
                 AttachVisualCarToKart()
             }
-            SnapCameraToKartNow()
+            if !IsIntroCamActive {
+                SnapCameraToKartNow()
+            }
         }
     }
 
@@ -1110,6 +1107,10 @@ graph RacingMovement {
     event onRaceCommand(cmdType int) {
         InitClientLists()
         if cmdType >= 6000 && cmdType <= 6999 {
+            if !IsLobbyActive {
+                InitialDefaultCamTimer = 0.0
+                HasSwitchedToIntroCam = false
+            }
             LobbyTimerSec = cmdType - 6000
             IsLobbyActive = true
             FirstFinishTimeoutActive = false
@@ -1127,6 +1128,13 @@ graph RacingMovement {
             HasStartedFinalSectorFlyby = false
             FlybyInitialized = false
             IntroAllShotsCompleted = false
+            IsIntroShutterActive = false
+            IntroShutterTimer = 0.0
+            IntroShutterCutDone = false
+            CinematicBarTargetHeight = 0.0
+            CinematicBarCurrentHeight = 0.0
+            InitialDefaultCamTimer = 0.0
+            HasSwitchedToIntroCam = false
             FlybyRunTimer = 0.0
             FlybySpeedMult = 1.0
             FirstFinishTimeoutActive = false
@@ -1193,6 +1201,13 @@ graph RacingMovement {
             IsIntroCamActive = false
             HasStartedFinalSectorFlyby = false
             FlybyInitialized = false
+            IsIntroShutterActive = false
+            IntroShutterTimer = 0.0
+            IntroShutterCutDone = false
+            CinematicBarTargetHeight = 0.0
+            CinematicBarCurrentHeight = 0.0
+            InitialDefaultCamTimer = 0.0
+            HasSwitchedToIntroCam = false
             FlybyRunTimer = 0.0
             IsIntroBlendingToCar = false
             RespawnBlinkTimer = 0.0
@@ -1516,8 +1531,10 @@ graph RacingMovement {
             SyncDriftEffects(false)
             // LogInfo("[Checkpoint] 🏁 FINISHED! AI Autopilot activated. Position: #" + convert.ToString(CpFinishPosition))
         } else if cmdType >= 7000 && cmdType < 7010 {
-            TotalIntroShots = cmdType - 7000
-            HasScannedIntroCameras = true
+            var srvIntroShots = cmdType - 7000
+            if srvIntroShots > 0 {
+                TotalIntroShots = srvIntroShots
+            }
             // LogInfo("[IntroCameraSync] Nhận đồng bộ " + convert.ToString(TotalIntroShots) + " góc Intro từ Server!")
         } else if cmdType >= 1000 && cmdType < 1256 {
             WpTotalWaypoints = cmdType - 1000
@@ -1556,16 +1573,10 @@ graph RacingMovement {
                         } else if coordType == 5 {
                             IntroP_End[shotIdx] = Vector3{IntroP_End[shotIdx].X, IntroP_End[shotIdx].Y, val}
                         } else if coordType == 6 {
-                            IntroR_Start[shotIdx] = Vector3{0.0, val, 0.0}
+                            // Cập nhật Yaw Y từ Server nhưng bảo tồn 100% độ nghiêng điện ảnh Pitch X và Roll Z
+                            IntroR_Start[shotIdx] = Vector3{IntroR_Start[shotIdx].X, val, IntroR_Start[shotIdx].Z}
                         } else if coordType == 7 {
-                            IntroR_End[shotIdx] = Vector3{0.0, val, 0.0}
-                            // LogInfo("[IntroCameraSync] Shot sync complete")
-                            if shotIdx == 0 && MyClientCam != nil {
-                                var camEnt = MyClientCam as entity<Entity>
-                                camEnt<Transform>.Position = IntroP_Start[0]
-                                camEnt<Transform>.Rotation = IntroR_Start[0]
-                                camera.SwitchCustomCameraClient(MyClientCam, camera.CameraTransitionType.Default, 0.0)
-                            }
+                            IntroR_End[shotIdx] = Vector3{IntroR_End[shotIdx].X, val, IntroR_End[shotIdx].Z}
                         }
                     }
                 } else if raw >= 1500000000 {
@@ -2410,6 +2421,16 @@ graph RacingMovement {
         camera.PlayCustomCameraShake(Vector3{0.4, 0.35, 0.2}, 0.55, 25.0, 20, 200, 300)
     }
 
+    func TriggerScrapeCameraShake(isLeft bool, speedKmh float) {
+        var xOffset = 0.28
+        if isLeft { xOffset = -0.28 }
+        var speedRatio = speedKmh / 200.0
+        if speedRatio < 0.3 { speedRatio = 0.3 }
+        if speedRatio > 1.2 { speedRatio = 1.2 }
+        var amp = 0.20 + speedRatio * 0.15
+        camera.PlayCustomCameraShake(Vector3{xOffset, 0.12, 0.15}, amp, 28.0, 15, 120, 160)
+    }
+
     func TriggerNitroInitialKickShake() {
         // Cú giật đề-pa Nitro: Dằn nảy trục Y (0.26) và nhún lùi Z (0.08), triệt tiêu trục ngang X để loại bỏ giật lag hai bên
         camera.PlayCustomCameraShake(Vector3{0.03, 0.34, 0.12}, 0.42, 22.0, 30, 260, 480)
@@ -2704,20 +2725,75 @@ graph RacingMovement {
     // - Tự động nhận diện các cặp IntroCam{N}_Start và IntroCam{N}_End
     // - Chạy luân phiên mượt mà (smoothstep lerp vị trí + slerp góc quay)
     // ---------------------------------------------------------
+    func InitDefaultIntroCameraData() {
+        if IntroP_Start == nil {
+            IntroP_Start = list.New(8, 8) as List<Vector3>
+            IntroP_End   = list.New(8, 8) as List<Vector3>
+            IntroR_Start = list.New(8, 8) as List<Vector3>
+            IntroR_End   = list.New(8, 8) as List<Vector3>
+        }
+        for initI = 0, 8, 1 {
+            IntroP_Start[initI] = Vector3{0.0, 0.0, 0.0}
+            IntroP_End[initI]   = Vector3{0.0, 0.0, 0.0}
+            IntroR_Start[initI] = Vector3{0.0, 0.0, 0.0}
+            IntroR_End[initI]   = Vector3{0.0, 0.0, 0.0}
+        }
+        // Dữ liệu góc quay chuẩn điện ảnh quét trực tiếp từ Scene Studio (đầy đủ Pitch, Yaw, Roll):
+        // Shot 0: IntroCam1 (Góc nghiêng điện ảnh khởi động)
+        IntroP_Start[0] = Vector3{156.29, 63.55, 65.58}
+        IntroR_Start[0] = Vector3{339.57, 213.76, 27.57}
+        IntroP_End[0]   = Vector3{-175.46, 90.64, -130.71}
+        IntroR_End[0]   = Vector3{4.03, 149.64, 348.90}
+
+        // Shot 1: IntroCam2 (Góc nghiêng Dutch Angle sắc nét)
+        IntroP_Start[1] = Vector3{200.99, 11.35, -462.72}
+        IntroR_Start[1] = Vector3{341.12, 203.51, 51.92}
+        IntroP_End[1]   = Vector3{278.77, 10.74, -559.38}
+        IntroR_End[1]   = Vector3{19.07, 264.02, 340.63}
+
+        // Shot 2: IntroCam3 (Góc cận trực diện đường đua)
+        IntroP_Start[2] = Vector3{-0.74, 0.16, -34.95}
+        IntroR_Start[2] = Vector3{0.0, 0.0, 0.0}
+        IntroP_End[2]   = Vector3{1.14, 1.50, -60.65}
+        IntroR_End[2]   = Vector3{345.57, 357.44, 0.0}
+
+        // Shot 3: IntroCam4 (Toàn cảnh lướt nhanh)
+        IntroP_Start[3] = Vector3{109.11, 25.98, -616.30}
+        IntroR_Start[3] = Vector3{17.20, 316.40, 12.31}
+        IntroP_End[3]   = Vector3{-140.06, 17.28, -432.80}
+        IntroR_End[3]   = Vector3{9.51, 204.79, 4.36}
+
+        TotalIntroShots = 4
+    }
+
     func ScanIntroCameras() {
         if HasScannedIntroCameras && TotalIntroShots > 0 { return }
 
-        // Tìm scene root: đi lên từ Sphere entity (giống hệt ScanWaypointMarkersClient)
-        var anchor = EditorGenLib.EResSceneMainScene.Sphere as entity<Entity>
-        var sceneRoot = anchor
-        if sceneRoot == nil {
-            sceneRoot = thisEntity as entity<Entity>
+        // Đảm bảo dữ liệu mặc định chuẩn từ Scene luôn sẵn sàng
+        if IntroP_Start == nil || TotalIntroShots <= 0 {
+            InitDefaultIntroCameraData()
         }
-        if sceneRoot != nil {
-            for step = 0, 20, 1 {
-                var p = std.GetParent(sceneRoot)
-                if p == nil { break }
-                sceneRoot = p
+
+        // Tìm scene root: đi lên từ Sphere entity (giống hệt ScanWaypointMarkersClient)
+        // 1. ƯU TIÊN SỐ 1: Quét trực tiếp từ ERes IntroCameraRoot hoặc PointRoot
+        var sceneRoot = EditorGenLib.EResSceneMainScene.IntroCameraRoot as entity<Entity>
+        if sceneRoot == nil {
+            sceneRoot = EditorGenLib.EResSceneMainScene.PointRoot as entity<Entity>
+        }
+
+        // 2. Dự phòng: nếu ERes chưa sẵn sàng thì đi lên từ Sphere hoặc thisEntity
+        if sceneRoot == nil {
+            var anchor = EditorGenLib.EResSceneMainScene.Sphere as entity<Entity>
+            sceneRoot = anchor
+            if sceneRoot == nil {
+                sceneRoot = thisEntity as entity<Entity>
+            }
+            if sceneRoot != nil {
+                for step = 0, 20, 1 {
+                    var p = std.GetParent(sceneRoot)
+                    if p == nil { break }
+                    sceneRoot = p
+                }
             }
         }
         if sceneRoot == nil { return }
@@ -2765,10 +2841,8 @@ graph RacingMovement {
                 var camEnt = MyClientCam as entity<Entity>
                 camEnt<Transform>.Position = IntroP_Start[0]
                 camEnt<Transform>.Rotation = IntroR_Start[0]
-                camera.SwitchCustomCameraClient(MyClientCam, camera.CameraTransitionType.Default, 0.0)
+                // Chưa switch camera ngay: giữ nguyên camera mặc định trong 20s đầu
             }
-        } else {
-            HasScannedIntroCameras = true
         }
     }
 
@@ -3011,19 +3085,19 @@ graph RacingMovement {
 
     func InitFlybyDistances() {
         InitClientLists()
-        var totalSegments = FlybyStartWp + 1
-        if totalSegments < 3 { totalSegments = 3 }
+        var totalSegments = FlybyStartWp
+        if totalSegments < 2 { totalSegments = 2 }
         var neededLen = totalSegments + 2
         if FlybyDist == nil || list.Length(FlybyDist as List<object>) < neededLen {
             FlybyDist = list.New(neededLen, neededLen) as List<float>
         }
         FlybyDist[0] = 0.0
         var accum = 0.0
-        // Đoạn 0 .. FlybyStartWp - 1: từ WP 51 ngược về WP 0
-        for i = 0, FlybyStartWp, 1 {
+        // Đoạn 0 .. FlybyStartWp - 2: từ FlybyStartWp ngược về WP 1
+        for i = 0, FlybyStartWp - 1, 1 {
             var fromWp = FlybyStartWp - i
             var toWp = fromWp - 1
-            if fromWp >= 0 && toWp >= 0 && fromWp < WpTotalWaypoints && toWp < WpTotalWaypoints {
+            if fromWp >= 0 && toWp >= 1 && fromWp < WpTotalWaypoints && toWp < WpTotalWaypoints {
                 var dx = WpX[fromWp] - WpX[toWp]
                 var dy = WpY[fromWp] - WpY[toWp]
                 var dz = WpZ[fromWp] - WpZ[toWp]
@@ -3035,8 +3109,26 @@ graph RacingMovement {
             }
             FlybyDist[i + 1] = accum
         }
-        // Segment cuối cùng: WP 0 -> carCamPos (vị trí camera sau xe)
-        accum += 25.0
+        // Segment cuối cùng (FlybyStartWp - 1): WP 1 -> carCamPos (vị trí 4.8m sau xe)
+        var carPos = Vector3{WpX[0], WpY[0], WpZ[0]}
+        var carYaw = 0.0
+        if KartModel != nil {
+            carPos = KartModel<Transform>.Position
+            var euler = math.QuaternionToEulerAngle(PhysicsQuat)
+            carYaw = euler.Y
+        } else if HasCpRespawn && (math.Abs(CpRespawnX) > 0.1 || math.Abs(CpRespawnZ) > 0.1) {
+            carPos = Vector3{CpRespawnX, CpRespawnY + 0.85, CpRespawnZ}
+            carYaw = CpRespawnYaw
+        }
+        var carRotQ = math.EulerAngleToQuaternion(Vector3{0.0, carYaw, 0.0})
+        var carCamOffset = math.RotateVector(Vector3{0.0, BaseCamHeight, -4.8}, carRotQ)
+        var carCamPos = Vector3{carPos.X + carCamOffset.X, carPos.Y + carCamOffset.Y, carPos.Z + carCamOffset.Z}
+        var lastDx = WpX[1] - carCamPos.X
+        var lastDy = (WpY[1] + FlybyCamHeight) - carCamPos.Y
+        var lastDz = WpZ[1] - carCamPos.Z
+        var lastD = math.Sqrt(lastDx * lastDx + lastDy * lastDy + lastDz * lastDz)
+        if lastD < 5.0 { lastD = 25.0 }
+        accum += lastD
         FlybyDist[totalSegments] = accum
         FlybyTotalDist = accum
     }
@@ -3057,17 +3149,24 @@ graph RacingMovement {
         if FlybyDist == nil { return }
 
         var camEntity = MyClientCam as entity<Entity>
-        var totalSegments = FlybyStartWp + 1
-        if totalSegments < 3 { totalSegments = 3 }
+        var totalSegments = FlybyStartWp
+        if totalSegments < 2 { totalSegments = 2 }
 
         if !FlybyInitialized {
             FlybyInitialized = true
             HasStartedFinalSectorFlyby = true
+
+            // GIAI ĐOẠN 3: Tự động co giãn thời lượng Flycam theo thời gian phòng chờ còn lại
+            var remainingTime = LobbySmoothTimer
+            if remainingTime < 5.0 {
+                remainingTime = 10.0 // Giới hạn an toàn tối thiểu nếu phòng chờ sắp hết
+            }
+            FlybyTotalDuration = remainingTime
+            FlybyRunTimer = 0.0
             InitFlybyDistances()
             FlybySpeedMult = 1.0
-            FlybyRunTimer = 0.0
 
-            // Cắt thẳng góc quay điện ảnh (Cut) sang WP 51, không lerp kéo lê qua bản đồ
+            // Cắt thẳng góc quay điện ảnh (Cut) sang WP bắt đầu, không lerp kéo lê qua bản đồ
             var initP1 = Vector3{WpX[FlybyStartWp], WpY[FlybyStartWp] + FlybyCamHeight, WpZ[FlybyStartWp]}
             var initP2 = Vector3{WpX[FlybyStartWp - 1], WpY[FlybyStartWp - 1] + FlybyCamHeight, WpZ[FlybyStartWp - 1]}
             var initDirX = initP2.X - initP1.X
@@ -3078,6 +3177,7 @@ graph RacingMovement {
             FlybyCurrentCamRot = Vector3{5.0, initYaw, 0.0}
             camEntity<Transform>.Position = initP1
             camEntity<Transform>.Rotation = Vector3{5.0, initYaw, 0.0}
+            camera.SwitchCustomCameraClient(MyClientCam, camera.CameraTransitionType.Default, 0.0)
         }
 
         // Tự động tăng đều đặn theo khung hình local của Client (chậm rãi, êm dịu theo FlybyTotalDuration = 40.0s)
@@ -3119,6 +3219,7 @@ graph RacingMovement {
             carYaw = CpRespawnYaw
         }
         var carRotQ = math.EulerAngleToQuaternion(Vector3{0.0, carYaw, 0.0})
+        var carFwdVec = math.RotateVector(Vector3{0.0, 0.0, 1.0}, carRotQ)
         var carCamOffset = math.RotateVector(Vector3{0.0, BaseCamHeight, -4.8}, carRotQ)
         var carCamPos = Vector3{carPos.X + carCamOffset.X, carPos.Y + carCamOffset.Y, carPos.Z + carCamOffset.Z}
         var carCamEuler = Vector3{BaseCamPitch, carYaw, 0.0}
@@ -3128,30 +3229,27 @@ graph RacingMovement {
         var p2 = Vector3{0.0, 0.0, 0.0}
         var p3 = Vector3{0.0, 0.0, 0.0}
 
-        if seg < (totalSegments - 2) {
-            // Chặng giữa các Waypoint (WP 51 -> WP 50 -> ... -> WP 1)
+        if seg < (totalSegments - 1) {
+            // Chặng giữa các Waypoint (WP 20 -> WP 19 -> ... -> WP 1)
             var fromWp = FlybyStartWp - seg
             var toWp = fromWp - 1
             var p0Idx = fromWp + 1
             if p0Idx >= WpTotalWaypoints { p0Idx = fromWp }
-            var p3Idx = toWp - 1
-            if p3Idx < 0 { p3Idx = 0 }
             p0 = Vector3{WpX[p0Idx], WpY[p0Idx] + FlybyCamHeight, WpZ[p0Idx]}
             p1 = Vector3{WpX[fromWp], WpY[fromWp] + FlybyCamHeight, WpZ[fromWp]}
             p2 = Vector3{WpX[toWp],   WpY[toWp] + FlybyCamHeight,   WpZ[toWp]}
-            p3 = Vector3{WpX[p3Idx],  WpY[p3Idx] + FlybyCamHeight,  WpZ[p3Idx]}
-        } else if seg == (totalSegments - 2) {
-            // Chặng WP 1 -> WP 0 (ngay vạch xuất phát)
+            if toWp > 1 {
+                var p3Idx = toWp - 1
+                p3 = Vector3{WpX[p3Idx],  WpY[p3Idx] + FlybyCamHeight,  WpZ[p3Idx]}
+            } else {
+                p3 = carCamPos
+            }
+        } else {
+            // Chặng cuối: WP 1 -> carCamPos (đáp thẳng và mượt mà vào đúng vị trí 4-5 mét sau xe!)
             p0 = Vector3{WpX[2], WpY[2] + FlybyCamHeight, WpZ[2]}
             p1 = Vector3{WpX[1], WpY[1] + FlybyCamHeight, WpZ[1]}
-            p2 = Vector3{WpX[0], WpY[0] + FlybyCamHeight, WpZ[0]}
-            p3 = carCamPos
-        } else {
-            // Chặng cuối: WP 0 -> carCamPos (đáp thẳng và mượt mà vào đúng vị trí sau xe của mình!)
-            p0 = Vector3{WpX[1], WpY[1] + FlybyCamHeight, WpZ[1]}
-            p1 = Vector3{WpX[0], WpY[0] + FlybyCamHeight, WpZ[0]}
             p2 = carCamPos
-            p3 = Vector3{carCamPos.X + math.Sin(carYaw * 0.017453) * 10.0, carCamPos.Y, carCamPos.Z + math.Cos(carYaw * 0.017453) * 10.0}
+            p3 = Vector3{carCamPos.X + carFwdVec.X * 5.0, carCamPos.Y + carFwdVec.Y * 5.0, carCamPos.Z + carFwdVec.Z * 5.0}
         }
 
         // Quỹ đạo đường cong Catmull-Rom C1 liên tục
@@ -3173,11 +3271,25 @@ graph RacingMovement {
         var currentTargetFOV = 68.0
 
         if seg == (totalSegments - 1) {
-            // Chặng cuối: hòa mượt mà góc nhìn từ quay lùi dẫn đường sang góc nhìn lái sau xe
+            // Chặng cuối (WP 1 -> sau xe 4-5 mét): đảm bảo góc nhìn luôn hướng về phía trước theo hướng xe, tuyệt đối không xoay 180 độ
+            var yawDiff = NormalizeYawClient(yawTarget - carCamEuler.Y)
+            if math.Abs(yawDiff) > 90.0 {
+                yawTarget = NormalizeYawClient(yawTarget + 180.0)
+            }
             var blendT = frac * frac * (3.0 - 2.0 * frac)
             yawTarget = LerpAngleDeg(yawTarget, carCamEuler.Y, blendT)
             pitchTarget = math.Lerp(pitchTarget, carCamEuler.X, blendT)
             currentTargetFOV = math.Lerp(68.0, CurrentFOV, blendT)
+
+            // Viền đen điện ảnh mở chậm dần ra ngoài mép màn hình khi đáp về sau xe / vạch xuất phát
+            var barFrac = frac * frac * (3.0 - 2.0 * frac)
+            CinematicBarTargetHeight = math.Lerp(110.0, 0.0, barFrac)
+            if frac >= 0.98 {
+                CinematicBarTargetHeight = 0.0
+            }
+        } else {
+            // Các chặng giữa Flycam (WP 20 -> WP 1): duy trì viền đen rạp phim 21:9
+            CinematicBarTargetHeight = 110.0
         }
 
         var finalPos = targetPos
@@ -3196,6 +3308,28 @@ graph RacingMovement {
         camEntity<Transform>.Position = FlybyCurrentCamPos
         camEntity<Transform>.Rotation = FlybyCurrentCamRot
         MyClientCam<camera.CustomCamera>.FOV = currentTargetFOV
+
+        UpdateCinematicLetterbox(dt)
+    }
+
+    func UpdateCinematicLetterbox(dt float) {
+        if !IsIntroCamActive || HasSwitchedStartCamera {
+            CinematicBarTargetHeight = 0.0
+            CinematicBarCurrentHeight = 0.0
+            return
+        }
+
+        // Tốc độ lerp chậm rãi, êm dịu, quý phái để người chơi thư thái thưởng thức
+        var lerpSpeed = 2.5 * dt
+        if CinematicBarTargetHeight < 5.0 {
+            lerpSpeed = 2.0 * dt
+        }
+        if lerpSpeed > 1.0 { lerpSpeed = 1.0 }
+
+        CinematicBarCurrentHeight = math.Lerp(CinematicBarCurrentHeight, CinematicBarTargetHeight, lerpSpeed)
+        if math.Abs(CinematicBarCurrentHeight - CinematicBarTargetHeight) < 0.3 {
+            CinematicBarCurrentHeight = CinematicBarTargetHeight
+        }
     }
 
     func UpdateIntroCamera(dt float) {
@@ -3215,6 +3349,88 @@ graph RacingMovement {
             }
         }
 
+        // GIAI ĐOẠN CHUYỂN TIẾP (SHUTTER BLACKOUT): Đóng chậm rãi -> Cut camera sang WP 20 -> Mở chậm rãi
+        if IsIntroShutterActive {
+            IntroShutterTimer += dt
+
+            if IntroShutterTimer <= 0.95 {
+                // Pha 1 (0.0s -> 0.95s): 2 thanh đen từ từ khép lại từ 110px vào giữa màn hình (400px)
+                var tClose = IntroShutterTimer / 0.95
+                if tClose < 0.0 { tClose = 0.0 }
+                if tClose > 1.0 { tClose = 1.0 }
+                var smoothClose = tClose * tClose * (3.0 - 2.0 * tClose)
+                CinematicBarCurrentHeight = math.Lerp(110.0, 400.0, smoothClose)
+            } else if IntroShutterTimer <= 1.25 {
+                // Pha 2 (0.95s -> 1.25s): Giữ màn hình đen tĩnh lặng hoàn toàn trong 0.30s & Cut camera tức thì
+                CinematicBarCurrentHeight = 400.0
+                if !IntroShutterCutDone {
+                    IntroShutterCutDone = true
+                    if WpTotalWaypoints < (FlybyStartWp + 1) {
+                        LoadDefaultTrackWaypoints()
+                    }
+                    var initP1 = Vector3{WpX[FlybyStartWp], WpY[FlybyStartWp] + FlybyCamHeight, WpZ[FlybyStartWp]}
+                    var initP2 = Vector3{WpX[FlybyStartWp - 1], WpY[FlybyStartWp - 1] + FlybyCamHeight, WpZ[FlybyStartWp - 1]}
+                    var initDirX = initP2.X - initP1.X
+                    var initDirZ = initP2.Z - initP1.Z
+                    var initYaw = math.ATan2(-initDirX, -initDirZ)
+
+                    FlybyCurrentCamPos = initP1
+                    FlybyCurrentCamRot = Vector3{5.0, initYaw, 0.0}
+                    var camEntity = MyClientCam as entity<Entity>
+                    camEntity<Transform>.Position = initP1
+                    camEntity<Transform>.Rotation = Vector3{5.0, initYaw, 0.0}
+                    MyClientCam<camera.CustomCamera>.FOV = 68.0
+
+                    // Chuẩn bị các biến cho Flycam
+                    FlybyRunTimer = 0.0
+                    FlybyInitialized = false
+                }
+            } else {
+                // Pha 3 (1.25s -> 2.20s): 2 thanh đen từ từ mở chậm rãi ra lại mức 110px hé lộ đường đua Flycam
+                var tOpen = (IntroShutterTimer - 1.25) / 0.95
+                if tOpen < 0.0 { tOpen = 0.0 }
+                if tOpen > 1.0 { tOpen = 1.0 }
+                var smoothOpen = tOpen * tOpen * (3.0 - 2.0 * tOpen)
+                CinematicBarCurrentHeight = math.Lerp(400.0, 110.0, smoothOpen)
+
+                if IntroShutterTimer >= IntroShutterDuration {
+                    IsIntroShutterActive = false
+                    CinematicBarCurrentHeight = 110.0
+                    CinematicBarTargetHeight = 110.0
+                    HasStartedFinalSectorFlyby = true
+                    UpdateFinalSectorFlyby(dt)
+                    return
+                }
+            }
+            return
+        }
+
+        // GIAI ĐOẠN 1: 20 giây đầu giữ nguyên camera mặc định của xe, không can thiệp góc quay & ẩn viền đen
+        if InitialDefaultCamTimer < InitialDefaultCamDuration {
+            InitialDefaultCamTimer += dt
+            if !HasScannedIntroCameras {
+                ScanIntroCameras()
+            }
+            CinematicBarTargetHeight = 0.0
+            UpdateCinematicLetterbox(dt)
+            return
+        }
+
+        // GIAI ĐOẠN 2: Sau 20s, bắt đầu chuyển sang góc Intro Camera đầu tiên & hiện viền đen điện ảnh
+        if !HasSwitchedToIntroCam {
+            HasSwitchedToIntroCam = true
+            IntroWatchdogTimer = 0.0
+            IntroShotIndex = 0
+            IntroShotTimer = 0.0
+            CinematicBarTargetHeight = 110.0
+            if MyClientCam != nil && TotalIntroShots > 0 {
+                var camEnt = MyClientCam as entity<Entity>
+                camEnt<Transform>.Position = IntroP_Start[0]
+                camEnt<Transform>.Rotation = IntroR_Start[0]
+                camera.SwitchCustomCameraClient(MyClientCam, camera.CameraTransitionType.Default, 0.0)
+            }
+        }
+
         // Nếu scene thực sự không có camera Intro nào sau 2.5s scan -> Fallback bật Flycam
         if TotalIntroShots <= 0 {
             IntroWatchdogTimer += dt
@@ -3222,6 +3438,7 @@ graph RacingMovement {
                 HasStartedFinalSectorFlyby = true
                 UpdateFinalSectorFlyby(dt)
             }
+            UpdateCinematicLetterbox(dt)
             return
         }
 
@@ -3237,13 +3454,18 @@ graph RacingMovement {
             IntroShotIndex += 1
             if IntroShotIndex >= TotalIntroShots {
                 // ĐÃ CHIẾU XONG TẤT CẢ GÓC INTRO (CHỈ CHIẾU 1 LẦN DUY NHẤT)!
-                // Lập tức ngắt Intro và chuyển giao sang Flycam WP 51 -> WP 1 -> Xe:
+                // Bắt đầu Shutter Blackout Transition (đóng sập màn hình đen, cắt máy quay tức thì sang WP 20)
                 IntroAllShotsCompleted = true
-                HasStartedFinalSectorFlyby = true
-                UpdateFinalSectorFlyby(dt)
+                IsIntroShutterActive = true
+                IntroShutterTimer = 0.0
+                IntroShutterCutDone = false
+                CinematicBarTargetHeight = 400.0
+                UpdateCinematicLetterbox(dt)
                 return
             }
         }
+
+        CinematicBarTargetHeight = 110.0
 
         var t = IntroShotTimer / IntroShotDuration
         if t < 0.0 { t = 0.0 }
@@ -3270,6 +3492,8 @@ graph RacingMovement {
         camEntity<Transform>.Position = curPos
         camEntity<Transform>.Rotation = curRotEuler
         MyClientCam<camera.CustomCamera>.FOV = 65.0
+
+        UpdateCinematicLetterbox(dt)
     }
 
     // =========================================================
@@ -3640,16 +3864,16 @@ graph RacingMovement {
                 out var scrpLftDiagEnt, out var scrpLftDiagPos, out var scrpLftDiagDist, out var scrpLftDiagNorm)
             var isLftDiagHit = KartGroundProbe.IsValidHit(scrpLftDiagEnt, KartModel as entity<Rigidbody>) && scrpLftDiagDist > 0.01 && scrpLftDiagNorm.Y < 0.80
 
-            // Giới hạn góc cạ tường bên trái: chỉ nhận khi mặt tường quay về xe và góc đâm <= 35°
+            // Giới hạn góc cạ tường bên trái: nhận diện cạ lướt và đâm chéo (từ góc rất nông tới 75°)
             if isLftSideHit {
                 var lftSideInto = -(fwdX * scrpLftNorm.X + fwdZ * scrpLftNorm.Z)
                 var lftSideFace = rgtX * scrpLftNorm.X + rgtZ * scrpLftNorm.Z
-                if lftSideInto > 0.58 || lftSideFace <= 0.15 { isLftSideHit = false }
+                if lftSideInto > 0.965 || lftSideFace <= 0.02 { isLftSideHit = false }
             }
             if isLftDiagHit {
                 var lftDiagInto = -(fwdX * scrpLftDiagNorm.X + fwdZ * scrpLftDiagNorm.Z)
                 var lftDiagFace = rgtX * scrpLftDiagNorm.X + rgtZ * scrpLftDiagNorm.Z
-                if lftDiagInto > 0.58 || lftDiagFace <= 0.15 { isLftDiagHit = false }
+                if lftDiagInto > 0.965 || lftDiagFace <= 0.02 { isLftDiagHit = false }
             }
 
             var isScrpLft = isLftSideHit || isLftDiagHit
@@ -3663,16 +3887,16 @@ graph RacingMovement {
                 out var scrpRgtDiagEnt, out var scrpRgtDiagPos, out var scrpRgtDiagDist, out var scrpRgtDiagNorm)
             var isRgtDiagHit = KartGroundProbe.IsValidHit(scrpRgtDiagEnt, KartModel as entity<Rigidbody>) && scrpRgtDiagDist > 0.01 && scrpRgtDiagNorm.Y < 0.80
 
-            // Giới hạn góc cạ tường bên phải: chỉ nhận khi mặt tường quay về xe và góc đâm <= 35°
+            // Giới hạn góc cạ tường bên phải: nhận diện cạ lướt và đâm chéo (từ góc rất nông tới 75°)
             if isRgtSideHit {
                 var rgtSideInto = -(fwdX * scrpRgtNorm.X + fwdZ * scrpRgtNorm.Z)
                 var rgtSideFace = rgtX * scrpRgtNorm.X + rgtZ * scrpRgtNorm.Z
-                if rgtSideInto > 0.58 || rgtSideFace >= -0.15 { isRgtSideHit = false }
+                if rgtSideInto > 0.965 || rgtSideFace >= -0.02 { isRgtSideHit = false }
             }
             if isRgtDiagHit {
                 var rgtDiagInto = -(fwdX * scrpRgtDiagNorm.X + fwdZ * scrpRgtDiagNorm.Z)
                 var rgtDiagFace = rgtX * scrpRgtDiagNorm.X + rgtZ * scrpRgtDiagNorm.Z
-                if rgtDiagInto > 0.58 || rgtDiagFace >= -0.15 { isRgtDiagHit = false }
+                if rgtDiagInto > 0.965 || rgtDiagFace >= -0.02 { isRgtDiagHit = false }
             }
 
             var isScrpRgt = isRgtSideHit || isRgtDiagHit
@@ -3727,6 +3951,9 @@ graph RacingMovement {
 
             if ScrapeLogTimer > 0.0 {
                 ScrapeLogTimer -= dt
+            }
+            if WallDeflectLogTimer > 0.0 {
+                WallDeflectLogTimer -= dt
             }
             if IsScrapingWall && ScrapeLogTimer <= 0.0 {
                 ScrapeLogTimer = 0.3
@@ -3958,42 +4185,52 @@ graph RacingMovement {
             var scrapeAccelMult = 1.0
             var scrapeAngleDeg = 0.0
 
-            if hFwdHit && hFwdDist < 1.05 {
+            var frontHitDistLimit = 1.05
+            var speedAhead = (CurrentSpeedKmh / 36.0) * dt * 1.8
+            if speedAhead > 0.0 { frontHitDistLimit += speedAhead }
+            if frontHitDistLimit > 2.5 { frontHitDistLimit = 2.5 }
+            if frontHitDistLimit < 1.05 { frontHitDistLimit = 1.05 }
+
+            if hFwdHit && hFwdDist < frontHitDistLimit {
                 frontWallDot = hFwdX * hFwdNorm.X + hFwdZ * hFwdNorm.Z
                 crashNormX = hFwdNorm.X
                 crashNormZ = hFwdNorm.Z
-                if frontWallDot < -0.85 {
+                if frontWallDot < -0.94 {
                     frontCrashHit = true
-                } else if frontWallDot < -0.10 {
+                } else if frontWallDot < -0.02 {
                     sideScrapeHit = true
+                    IsScrapingWall = true
+                    ScrapeHitNorm = Vector3{crashNormX, 0.0, crashNormZ}
                     var sideSign = rgtVecFlat.X * crashNormX + rgtVecFlat.Z * crashNormZ
                     if sideSign > 0.0 { IsScrapingLeft = true; IsScrapingRight = false } else { IsScrapingRight = true; IsScrapingLeft = false }
                 }
-            } else if fwdHit && fwdDist < 1.05 {
+            } else if fwdHit && fwdDist < frontHitDistLimit {
                 frontWallDot = fwdVecFlat.X * fwdNorm.X + fwdVecFlat.Z * fwdNorm.Z
                 crashNormX = fwdNorm.X
                 crashNormZ = fwdNorm.Z
-                if frontWallDot < -0.85 {
+                if frontWallDot < -0.94 {
                     frontCrashHit = true
-                } else if frontWallDot < -0.10 {
+                } else if frontWallDot < -0.02 {
                     sideScrapeHit = true
+                    IsScrapingWall = true
+                    ScrapeHitNorm = Vector3{crashNormX, 0.0, crashNormZ}
                     var sideSign = rgtVecFlat.X * crashNormX + rgtVecFlat.Z * crashNormZ
                     if sideSign > 0.0 { IsScrapingLeft = true; IsScrapingRight = false } else { IsScrapingRight = true; IsScrapingLeft = false }
                 }
             }
 
-            if !frontCrashHit && ((rightHit && rightDist < 0.88) || (leftHit && leftDist < 0.88)) {
+            if !frontCrashHit && ((rightHit && rightDist < 1.30) || (leftHit && leftDist < 1.30)) {
                 var rgtValid = false
                 if rightHit {
                     var rgtInto = -(fwdVecFlat.X * rightNorm.X + fwdVecFlat.Z * rightNorm.Z)
                     var rgtFace = rgtVecFlat.X * rightNorm.X + rgtVecFlat.Z * rightNorm.Z
-                    if rgtInto <= 0.58 && rgtFace < -0.15 { rgtValid = true }
+                    if rgtInto <= 0.965 && rgtFace < -0.04 { rgtValid = true }
                 }
                 var lftValid = false
                 if leftHit {
                     var lftInto = -(fwdVecFlat.X * leftNorm.X + fwdVecFlat.Z * leftNorm.Z)
                     var lftFace = rgtVecFlat.X * leftNorm.X + rgtVecFlat.Z * leftNorm.Z
-                    if lftInto <= 0.58 && lftFace > 0.15 { lftValid = true }
+                    if lftInto <= 0.965 && lftFace > 0.04 { lftValid = true }
                 }
 
                 if rgtValid && lftValid {
@@ -4018,7 +4255,7 @@ graph RacingMovement {
             }
 
             if frontCrashHit && !IsReversing {
-                // ĐÂM TRỰC DIỆN (Góc đâm > 58° vào tường)
+                // ĐÂM TRỰC DIỆN HOẶC GÓC LỚN (> 23° vào tường)
                 isCrashing = true
                 wallDot = frontWallDot
                 sideScrapeHit = false
@@ -4116,10 +4353,19 @@ graph RacingMovement {
             
 
             if hitTriggeredCCD {
-                var safePos = KartCCD.CalcSafePosition(ccdHitPosX, ccdHitPosY, ccdHitPosZ, ccdHitNormX, ccdHitNormY, ccdHitNormZ, CcdKartRadius + WallStopBackoff)
+                var ccdDot = fwdVecFlat.X * ccdHitNormX + fwdVecFlat.Z * ccdHitNormZ
+                var isHeadOnCrash = frontCrashHit || (ccdDot < -0.965)
+
+                var backoffDist = 0.02
+                if isHeadOnCrash { backoffDist = WallStopBackoff }
+                var safePos = KartCCD.CalcSafePosition(ccdHitPosX, ccdHitPosY, ccdHitPosZ, ccdHitNormX, ccdHitNormY, ccdHitNormZ, CcdKartRadius + backoffDist)
                 if ccdUseSweepSafePos {
-                    var partialExtent = CcdMinExtent * (1.0 - CcdSkinWidth)
-                    safePos = KartCCD.CalcSweepSafePosition(Vector3{ccdHitPosX, ccdHitPosY, ccdHitPosZ}, sweepDir, partialExtent)
+                    if isHeadOnCrash {
+                        var partialExtent = CcdMinExtent * (1.0 - CcdSkinWidth)
+                        safePos = KartCCD.CalcSweepSafePosition(Vector3{ccdHitPosX, ccdHitPosY, ccdHitPosZ}, sweepDir, partialExtent)
+                    } else {
+                        safePos = KartCCD.CalcSweepSafePosition(Vector3{ccdHitPosX, ccdHitPosY, ccdHitPosZ}, sweepDir, CcdMinExtent * CcdSkinWidth)
+                    }
                 }
                 // === XỬ LÝ VA CHẠM CCD: LOẠI BỎ VẬN TỐC LAO VÀO TƯỜNG ===
                 var vDotN = vel.X * ccdHitNormX + vel.Y * ccdHitNormY + vel.Z * ccdHitNormZ
@@ -4130,10 +4376,6 @@ graph RacingMovement {
                     newVel.Y = vel.Y - vDotN * ccdHitNormY
                     newVel.Z = vel.Z - vDotN * ccdHitNormZ
                 }
-
-                // Kiểm tra góc va chạm trong CCD:
-                var ccdDot = fwdVecFlat.X * ccdHitNormX + fwdVecFlat.Z * ccdHitNormZ
-                var isHeadOnCrash = frontCrashHit || (ccdDot < -0.75)
 
                 if isHeadOnCrash {
                     // Đâm trực diện (> 50° vào tường): triệt tiêu vận tốc ngang và phạt tốc độ
@@ -4167,6 +4409,14 @@ graph RacingMovement {
                     }
                     var ccdSideSign = rgtVecFlat.X * ccdHitNormX + rgtVecFlat.Z * ccdHitNormZ
                     if ccdSideSign > 0.0 { IsScrapingLeft = true } else { IsScrapingRight = true }
+
+                    // Giữ cao độ Y nguyên vẹn của xe trên mặt đường, tuyệt đối không teleport nẩy lên trời
+                    safePos.Y = pos.Y
+                    // Triệt tiêu 100% phản lực nẩy lên Y khi va chạm cạ tường ở tốc độ cao
+                    if newVel.Y > 0.0 { newVel.Y = 0.0 }
+                    // Giữ xe bám cạnh mép tường, không bị giật lùi vị trí ra phía sau
+                    safePos.X = ccdHitPosX + ccdHitNormX * (CcdKartRadius + 0.02)
+                    safePos.Z = ccdHitPosZ + ccdHitNormZ * (CcdKartRadius + 0.02)
                 }
 
                 KartModel<Transform>.Position = safePos
@@ -4317,6 +4567,10 @@ graph RacingMovement {
             if !IsBraking && PrevIsBraking {
                 PostDriftBoostTimer = PostDriftNitroBoostTime
                 NitroPostCutCooldown = 0.25
+                if DriftTimer >= 0.25 {
+                    NitroCharge += 15.0
+                    if NitroCharge > MaxNitroCharge { NitroCharge = MaxNitroCharge }
+                }
             }
 
             if PrevIsBoosting && !IsBoosting {
@@ -4337,14 +4591,14 @@ graph RacingMovement {
 
             var nitroChargeRate = NitroChargeRate
             if NitroPostCutCooldown > 0.0 {
-                nitroChargeRate = NitroChargeRate * 0.20
+                nitroChargeRate = NitroChargeRate * 0.40
             } else {
                 var chargeSpeedKmh = CurrentSpeedKmh
                 var chargeSpeedCap = TopSpeed * 1.5
                 if chargeSpeedKmh > chargeSpeedCap { chargeSpeedKmh = chargeSpeedCap }
                 if chargeSpeedCap > 0.01 {
                     var chargeSpeedFactor = chargeSpeedKmh / chargeSpeedCap
-                    if chargeSpeedFactor < 0.50 { chargeSpeedFactor = 0.50 }
+                    if chargeSpeedFactor < 0.80 { chargeSpeedFactor = 0.80 }
                     if chargeSpeedFactor > 1.50 { chargeSpeedFactor = 1.50 }
                     nitroChargeRate = NitroChargeRate * chargeSpeedFactor
                 }
@@ -4428,6 +4682,7 @@ graph RacingMovement {
                 // AI Autopilot áp dụng góc lái trực tiếp không độ trễ, triệt tiêu hoàn toàn thiếu lái khi vào cua
                 turnRate = AiTurnRate
             }
+
             // ── PROBLEM 2 FIX: removed hardcoded `turnRate *= 3.5` ────────────
             // Steering authority is now integrated in CalcSteerRate() with
             // per-state scaling (grounded/drift/air). Do NOT re-add multiplier here.
@@ -4445,6 +4700,137 @@ graph RacingMovement {
             // Goal #1: remove dual yaw integration; FacingAngle mirrors PhysicsQuat yaw only.
             var physEuler = math.QuaternionToEulerAngle(PhysicsQuat)
             FacingAngle = KartSteeringRuntime.NormalizeFacingAngle(physEuler.Y)
+
+            // --- ARCADE WALL SCRAPING: CHUYÊN NGHIỆP — CHỈ BẺ HƯỚNG THEO TƯỜNG KHI ĐANG CHẠM TƯỜNG ---
+            var hasInstantScrape = sideScrapeHit || IsScrapingWall || IsScrapingLeft || IsScrapingRight
+            if hasInstantScrape {
+                var hitNx = ScrapeHitNorm.X
+                var hitNz = ScrapeHitNorm.Z
+                if hitNx == 0.0 && hitNz == 0.0 {
+                    hitNx = crashNormX
+                    hitNz = crashNormZ
+                }
+                if hitNx == 0.0 && hitNz == 0.0 {
+                    if IsScrapingLeft {
+                        hitNx = rgtVecFlat.X
+                        hitNz = rgtVecFlat.Z
+                    } else if IsScrapingRight {
+                        hitNx = -rgtVecFlat.X
+                        hitNz = -rgtVecFlat.Z
+                    }
+                }
+                var hitLen = math.Sqrt(hitNx * hitNx + hitNz * hitNz) as float
+                if hitLen > 0.001 {
+                    var targetNx = hitNx / hitLen
+                    var targetNz = hitNz / hitLen
+                    if ActiveWallNormX == 0.0 && ActiveWallNormZ == 0.0 {
+                        ActiveWallNormX = targetNx
+                        ActiveWallNormZ = targetNz
+                    } else {
+                        // Làm mượt pháp tuyến tường trên tường cong để không bị giật đa giác
+                        ActiveWallNormX = math.Lerp(ActiveWallNormX, targetNx, dt * 15.0)
+                        ActiveWallNormZ = math.Lerp(ActiveWallNormZ, targetNz, dt * 15.0)
+                        var aLen = math.Sqrt(ActiveWallNormX * ActiveWallNormX + ActiveWallNormZ * ActiveWallNormZ) as float
+                        if aLen > 0.001 { ActiveWallNormX /= aLen; ActiveWallNormZ /= aLen }
+                    }
+                    WallScrapeStickTimer = 0.05
+                }
+            } else {
+                WallScrapeStickTimer = 0.0
+                ActiveWallNormX = 0.0
+                ActiveWallNormZ = 0.0
+            }
+
+            var isWallScrapingNow = hasInstantScrape && (ActiveWallNormX != 0.0 || ActiveWallNormZ != 0.0)
+            if isWallScrapingNow {
+                var wallScrapeNx = ActiveWallNormX
+                var wallScrapeNz = ActiveWallNormZ
+
+                var curFwd = math.RotateVector(Vector3{0.0, 0.0, 1.0}, PhysicsQuat)
+
+                // BẺ HƯỚNG TỪ TỪ KHI CẠ HÔNG HOẶC ĐÂM CHÉO VÀO TƯỜNG (intoWall > 0.005)
+                var intoWall = -(curFwd.X * wallScrapeNx + curFwd.Z * wallScrapeNz)
+                var isQualifySideScrape = CurrentSpeedKmh > 15.0 && !IsReversing && intoWall > 0.005
+                if isQualifySideScrape {
+                    // Vector tiếp tuyến tường cùng chiều tiến của xe
+                    var tanX = -wallScrapeNz
+                    var tanZ = wallScrapeNx
+                    if curFwd.X * tanX + curFwd.Z * tanZ < 0.0 {
+                        tanX = wallScrapeNz
+                        tanZ = -wallScrapeNx
+                    }
+
+                    // Góc Yaw tiếp tuyến của bờ tường (Degrees)
+                    var wallYaw = math.ATan2(tanX, tanZ)
+                    var curYaw = physEuler.Y
+                    var yawDiff = wallYaw - curYaw
+                    while yawDiff > 180.0 { yawDiff -= 360.0 }
+                    while yawDiff < -180.0 { yawDiff += 360.0 }
+
+                    // Nếu người chơi đang ấn giữ nút cua đâm ngược vào tường (turnRate ngược dấu yawDiff),
+                    // triệt tiêu phần góc xoay đâm vào tường của frame này để mũi xe không bị ghìm kẹt vào tường
+                    if turnRate * yawDiff < 0.0 {
+                        curYaw -= turnRate * dt
+                        yawDiff = wallYaw - curYaw
+                        while yawDiff > 180.0 { yawDiff -= 360.0 }
+                        while yawDiff < -180.0 { yawDiff += 360.0 }
+                    }
+
+                    // Bẻ lái dứt khoát và mượt mà theo tiếp tuyến (cả khi góc cạ nông lẫn góc đâm xiên 30°-68°)
+                    var intoFactor = intoWall * 2.2
+                    if intoFactor > 1.0 { intoFactor = 1.0 }
+                    if intoFactor < 0.35 { intoFactor = 0.35 }
+
+                    var speedScale = CurrentSpeedKmh / 90.0
+                    if speedScale < 0.9 { speedScale = 0.9 }
+                    if speedScale > 2.2 { speedScale = 2.2 }
+
+                    var alignStep = dt * 9.0 * intoFactor * speedScale
+                    if alignStep > 0.26 { alignStep = 0.26 }
+
+                    var deltaYaw = yawDiff * alignStep
+                    var minStepDeg = dt * 85.0 * intoFactor * speedScale
+                    if math.Abs(yawDiff) > minStepDeg && math.Abs(deltaYaw) < minStepDeg {
+                        if yawDiff > 0.0 { deltaYaw = minStepDeg } else { deltaYaw = -minStepDeg }
+                    }
+
+                    var newYaw = curYaw + deltaYaw
+                    physEuler.Y = newYaw
+                    PhysicsQuat = math.EulerAngleToQuaternion(Vector3{physEuler.X, newYaw, physEuler.Z})
+                    FacingAngle = KartSteeringRuntime.NormalizeFacingAngle(newYaw)
+                    VelocityQuat = math.SlerpQuaternion(VelocityQuat, PhysicsQuat, dt * 18.0)
+
+                    // In log theo dõi bẻ hướng độc lập
+                    if WallDeflectLogTimer <= 0.0 {
+                        WallDeflectLogTimer = 0.25
+                        LogInfo("[RacingMovement] ↪ BẺ LÁI THEO TƯỜNG! Xe: " + convert.ToString(math.Round(FacingAngle)) + "° -> Tường: " + convert.ToString(math.Round(wallYaw)) + "° (Lệch: " + convert.ToString(math.Round(yawDiff)) + "°)")
+                    }
+                }
+
+                // CHỈ LOẠI BỎ VẬN TỐC ĐÂM VÀO TƯỜNG, TUYỆT ĐỐI KHÔNG ÉP DÍNH VÀO TƯỜNG
+                var vDotW = vel.X * wallScrapeNx + vel.Z * wallScrapeNz
+                if vDotW < 0.0 {
+                    vel.X -= vDotW * wallScrapeNx
+                    vel.Z -= vDotW * wallScrapeNz
+                }
+
+                // Triệt tiêu 100% phản lực nẩy lên không trung khi cạ/đâm tường ở tốc độ cao
+                if vel.Y > 0.0 { vel.Y = 0.0 }
+                if KartModel != nil {
+                    KartModel<Rigidbody>.Velocity = vel
+                    KartModel<Rigidbody>.AngularVelocity = Vector3{0.0, 0.0, 0.0}
+                }
+
+                // Giữ trớn lướt tiếp dọc tường, không bị chết ga dừng xe
+                if DriveForwardSpeed < physTopSpeed * 0.55 {
+                    DriveForwardSpeed = physTopSpeed * 0.55
+                }
+
+                // Tắt trạng thái crash
+                isCrashing = false
+                Frame_IsCrashing = false
+            }
+
             UIKartYaw = FacingAngle
             UIKartPos = KartModel<Transform>.Position
 
@@ -4736,10 +5122,10 @@ graph RacingMovement {
                 if wallLen > 0.001 {
                     wallNx /= wallLen
                     wallNz /= wallLen
-                    var targetIntoWall = targetVelX * wallNx + targetVelZ * wallNz
-                    if targetIntoWall < 0.0 {
-                        targetVelX = targetVelX - targetIntoWall * wallNx
-                        targetVelZ = targetVelZ - targetIntoWall * wallNz
+                    var targetDotW = targetVelX * wallNx + targetVelZ * wallNz
+                    if targetDotW < 0.0 {
+                        targetVelX -= targetDotW * wallNx
+                        targetVelZ -= targetDotW * wallNz
                     }
                 }
             }
@@ -4756,10 +5142,15 @@ graph RacingMovement {
             KartPhysics.ApplyAngularDamping(KartModel as entity<Rigidbody>, IsStableGrounded)
             // ─────────────────────────────────────────────────────────────────
 
+            var isHeadCrash = frontCrashHit || isCrashing || Frame_IsCrashing
+            var isSideScrape = (sideScrapeHit || IsScrapingWall) && !isHeadCrash
             if IsStableGrounded {
                 // Goal #5: suspension spring pushes away from surface along normal.
-                // This is intentionally subtle (arcade) and clamped above.
-                KartPhysics.ApplySuspensionForce(KartModel as entity<Rigidbody>, nx, ny, nz, suspForce)
+                // Khi đâm trực diện/góc lớn: ngắt lò xo phía trước để tránh bốc đầu.
+                // Khi chỉ cạ hông nhẹ: GIỮ NGUYÊN lò xo suspension để xe lăn bánh êm ái, không sụp gầm!
+                if !isHeadCrash {
+                    KartPhysics.ApplySuspensionForce(KartModel as entity<Rigidbody>, nx, ny, nz, suspForce)
+                }
                 // ── FEATURE 5: HIGH-SPEED DOWNFORCE ──────────────────────────────
                 // Adds extra adhesion along the surface normal at high speed.
                 // Prevents the kart from "floating" out of corners at top speed.
@@ -4769,7 +5160,8 @@ graph RacingMovement {
                 if isDriftActive {
                     totalGroundForce += DriftDownforceBonus * DriftBlend
                 }
-                if Frame_IsCrashing {
+                // Chỉ đè thêm lực chống leo tường khi đâm trực diện; cạ hông giữ lực đè bình thường để xe không bị nặng
+                if isHeadCrash {
                     totalGroundForce += WallAntiClimbDownForce
                 }
                 // ─────────────────────────────────────────────────────────────────
@@ -4786,6 +5178,25 @@ graph RacingMovement {
             if safeTelemetryVel.X != KartModel<Rigidbody>.Velocity.X || safeTelemetryVel.Z != KartModel<Rigidbody>.Velocity.Z {
                 KartModel<Rigidbody>.Velocity = safeTelemetryVel
             }
+
+            // Anti-wall-bounce:
+            // 1. Đâm trực diện/góc lớn: khóa cứng nảy Y <= 0 để dán chặt xuống đường
+            // 2. Cạ hông nhẹ: trượt lướt mượt mà bám theo mặt đường, không bị khựng giật
+            if isHeadCrash {
+                if safeTelemetryVel.Y > 0.0 {
+                    safeTelemetryVel.Y = 0.0
+                    KartModel<Rigidbody>.Velocity = safeTelemetryVel
+                }
+            } else if isSideScrape {
+                if safeTelemetryVel.Y > (targetVelY + 0.3) {
+                    safeTelemetryVel.Y = targetVelY + 0.3
+                    KartModel<Rigidbody>.Velocity = safeTelemetryVel
+                }
+            } else if IsStableGrounded && safeTelemetryVel.Y > (targetVelY + 1.5) {
+                safeTelemetryVel.Y = targetVelY + 1.5
+                KartModel<Rigidbody>.Velocity = safeTelemetryVel
+            }
+
             vel = safeTelemetryVel
 
             // -------------------------------------------------
@@ -5148,16 +5559,16 @@ graph RacingMovement {
                 if speedCamBonus < 0.0 { speedCamBonus = 0.0 }
                 if speedCamBonus > 1.0 { speedCamBonus = 1.0 }
 
-                // Góc điện ảnh dưới lên: hạ thấp hơn và ngước cao hơn theo vận tốc
-                driftHeightTarget = (CamDriftHeightDropMax - speedCamBonus * 0.10) * DriftBlend
-                driftPitchTarget = (CamDriftPitchUpMax + speedCamBonus * 1.8) * DriftBlend
+                // Giữ độ cao camera ổn định, không hạ thấp xuống mặt đường khi drift ở tốc độ cao
+                driftHeightTarget = CamDriftHeightDropMax * DriftBlend
+                driftPitchTarget = CamDriftPitchUpMax * DriftBlend
 
                 // Khi drift: lấy hướng drift theo ActiveDriftDir để giữ góc nghiêng ổn định cả khi counter-steer
                 var driftDir = ActiveDriftDir
                 if driftDir == 0.0 { driftDir = turnInputForCam }
                 if driftDir != 0.0 {
                     driftYawInwardTarget = -driftDir * CamDriftYawInwardMax * DriftBlend
-                    // Nghiêng camera rõ rệt theo góc điện ảnh dưới lên (~10.5° - 15.0° theo vận tốc)
+                    // Nghiêng camera rõ rệt theo góc điện ảnh (~10.5° - 15.0° theo vận tốc)
                     driftRollTarget = -driftDir * (10.5 + DriftBlend * 2.5 + speedCamBonus * 2.0)
                 }
             } else if turnInputForCam != 0.0 {
@@ -5196,12 +5607,12 @@ graph RacingMovement {
             if math.Abs(CamDriftYawInward) < 0.01 { CamDriftYawInward = 0.0 }
             if math.Abs(CamDriftRoll) < 0.01 { CamDriftRoll = 0.0 }
 
-            // Góc duy trì camera theo tốc độ (áp dụng đồng nhất cho cả chạy tốc độ cao không Nitro lẫn Nitro)
+            // Góc duy trì camera theo tốc độ: giữ ổn định tầm nhìn xa, không chúc camera xuống đất khi bật Nitro
             var highSpeedFactor = (speedRatio - 0.35) / 0.65
             if highSpeedFactor < 0.0 { highSpeedFactor = 0.0 }
             if highSpeedFactor > 1.0 { highSpeedFactor = 1.0 }
 
-            var speedPitchTarget = highSpeedFactor * 4.5
+            var speedPitchTarget = highSpeedFactor * 1.0
             var speedBackPull = highSpeedFactor * 0.45
 
             var nitroHeightTarget = 0.0
@@ -5209,10 +5620,10 @@ graph RacingMovement {
             var nitroBackPull = speedBackPull
 
             if NitroCamBlend > 0.01 || nitroKick > 0.01 {
-                nitroHeightTarget = (-0.06 * NitroCamBlend - 0.10 * nitroKick) * (0.70 + speedRatio * 0.30)
+                nitroHeightTarget = 0.0
                 nitroBackPull = speedBackPull + (0.15 * NitroCamBlend + 0.20 * nitroKick) * nitroTierFeel
-                nitroPitchTarget = speedPitchTarget + 1.5 * NitroCamBlend + 2.0 * nitroKick * nitroTierFeel
-                if nitroPitchTarget > 8.5 { nitroPitchTarget = 8.5 }
+                nitroPitchTarget = speedPitchTarget + 0.8 * NitroCamBlend
+                if nitroPitchTarget > 2.2 { nitroPitchTarget = 2.2 }
             }
             var nitroPoseSharp = 4.5
             if nitroHeightTarget < CamNitroHeightDrop || nitroPitchTarget > CamNitroPitchUp {
@@ -5232,7 +5643,6 @@ graph RacingMovement {
             }
             if camBackZ < camBackMinZ { camBackZ = camBackMinZ }
             if CrashCamSnapTimer > 0.0 {
-                camBackZ = CrashCamNearZ
                 CamBoostPullCurrent = 0.0
             }
 
@@ -5259,23 +5669,100 @@ graph RacingMovement {
                 rawCarPos.Y + rotatedOffset.Y + lookAheadVec.Y, 
                 rawCarPos.Z + rotatedOffset.Z + lookAheadVec.Z}
 
-            var camRayX = desiredCamPos.X - rawCarPos.X
-            var camRayY = desiredCamPos.Y - rawCarPos.Y
-            var camRayZ = desiredCamPos.Z - rawCarPos.Z
+            var camUp = math.RotateVector(Vector3{0.0, 1.0, 0.0}, CamQuat)
+            var camFocusPos = Vector3{rawCarPos.X + camUp.X * 0.65, rawCarPos.Y + camUp.Y * 0.65, rawCarPos.Z + camUp.Z * 0.65}
+
+            var camRayX = desiredCamPos.X - camFocusPos.X
+            var camRayY = desiredCamPos.Y - camFocusPos.Y
+            var camRayZ = desiredCamPos.Z - camFocusPos.Z
             var camRayLen = math.Sqrt(camRayX * camRayX + camRayY * camRayY + camRayZ * camRayZ) as float
             CurrentCamPos = desiredCamPos
-            if camRayLen > 0.05 {
+            if camRayLen > 0.10 {
                 var camDir = Vector3{camRayX / camRayLen, camRayY / camRayLen, camRayZ / camRayLen}
-                physics.SingleRaycast(rawCarPos, camDir, camRayLen, nil, false, out var camHitEnt, out var camHitPos, out var camHitDist, out var camHitNorm)
-                var camBlocked = KartGroundProbe.IsValidHit(camHitEnt, KartModel as entity<Rigidbody>)
-                if camBlocked {
-                    var safeDist = camHitDist - CamCollisionBuffer
-                    if safeDist < CamCollisionMinDist { safeDist = CamCollisionMinDist }
-                    if safeDist > camRayLen { safeDist = camRayLen }
+                var camRgt = math.RotateVector(Vector3{1.0, 0.0, 0.0}, CamQuat)
+
+                var minFraction = 1.0
+                var hasHit = false
+                var bestNorm = Vector3{0.0, 0.0, 0.0}
+
+                // 1. Center ray
+                physics.SingleRaycast(camFocusPos, camDir, camRayLen, nil, false, out var cEnt, out var cPos, out var cDist, out var cNorm)
+                if KartGroundProbe.IsValidHit(cEnt, KartModel as entity<Rigidbody>) {
+                    var safeDistC = cDist - CamCollisionBuffer
+                    if safeDistC < CamCollisionMinDist { safeDistC = CamCollisionMinDist }
+                    var fracC = (safeDistC / camRayLen) as float
+                    if fracC < minFraction {
+                        minFraction = fracC
+                        bestNorm = cNorm
+                        hasHit = true
+                    }
+                }
+
+                // 2. Left probe (camera frustum left edge)
+                var tgtLft = Vector3{desiredCamPos.X - camRgt.X * 0.45, desiredCamPos.Y - camRgt.Y * 0.45, desiredCamPos.Z - camRgt.Z * 0.45}
+                var lRayX = tgtLft.X - camFocusPos.X
+                var lRayY = tgtLft.Y - camFocusPos.Y
+                var lRayZ = tgtLft.Z - camFocusPos.Z
+                var lRayLen = math.Sqrt(lRayX * lRayX + lRayY * lRayY + lRayZ * lRayZ) as float
+                if lRayLen > 0.10 {
+                    var lDir = Vector3{lRayX / lRayLen, lRayY / lRayLen, lRayZ / lRayLen}
+                    physics.SingleRaycast(camFocusPos, lDir, lRayLen, nil, false, out var lEnt, out var lPos, out var lDist, out var lNorm)
+                    if KartGroundProbe.IsValidHit(lEnt, KartModel as entity<Rigidbody>) {
+                        var safeDistL = lDist - CamCollisionBuffer
+                        if safeDistL < CamCollisionMinDist { safeDistL = CamCollisionMinDist }
+                        var fracL = (safeDistL / lRayLen) as float
+                        if fracL < minFraction {
+                            minFraction = fracL
+                            bestNorm = lNorm
+                            hasHit = true
+                        }
+                    }
+                }
+
+                // 3. Right probe (camera frustum right edge)
+                var tgtRgt = Vector3{desiredCamPos.X + camRgt.X * 0.45, desiredCamPos.Y + camRgt.Y * 0.45, desiredCamPos.Z + camRgt.Z * 0.45}
+                var rRayX = tgtRgt.X - camFocusPos.X
+                var rRayY = tgtRgt.Y - camFocusPos.Y
+                var rRayZ = tgtRgt.Z - camFocusPos.Z
+                var rRayLen = math.Sqrt(rRayX * rRayX + rRayY * rRayY + rRayZ * rRayZ) as float
+                if rRayLen > 0.10 {
+                    var rDir = Vector3{rRayX / rRayLen, rRayY / rRayLen, rRayZ / rRayLen}
+                    physics.SingleRaycast(camFocusPos, rDir, rRayLen, nil, false, out var rEnt, out var rPos, out var rDist, out var rNorm)
+                    if KartGroundProbe.IsValidHit(rEnt, KartModel as entity<Rigidbody>) {
+                        var safeDistR = rDist - CamCollisionBuffer
+                        if safeDistR < CamCollisionMinDist { safeDistR = CamCollisionMinDist }
+                        var fracR = (safeDistR / rRayLen) as float
+                        if fracR < minFraction {
+                            minFraction = fracR
+                            bestNorm = rNorm
+                            hasHit = true
+                        }
+                    }
+                }
+
+                if hasHit {
+                    if minFraction < 0.0 { minFraction = 0.0 }
+                    if minFraction > 1.0 { minFraction = 1.0 }
+                    var finalSafeDist = (camRayLen * minFraction) as float
+                    if finalSafeDist < CamCollisionMinDist { finalSafeDist = CamCollisionMinDist }
+                    if finalSafeDist > camRayLen { finalSafeDist = camRayLen }
+
+                    var safePos = Vector3{
+                        camFocusPos.X + camDir.X * finalSafeDist,
+                        camFocusPos.Y + camDir.Y * finalSafeDist,
+                        camFocusPos.Z + camDir.Z * finalSafeDist}
+
+                    var pushNx = bestNorm.X * 0.20
+                    var pushNy = bestNorm.Y * 0.20
+                    if bestNorm.Y > 0.60 {
+                        pushNy = 0.0
+                    }
+                    var pushNz = bestNorm.Z * 0.20
+
                     CurrentCamPos = Vector3{
-                        rawCarPos.X + camDir.X * safeDist,
-                        rawCarPos.Y + camDir.Y * safeDist,
-                        rawCarPos.Z + camDir.Z * safeDist}
+                        safePos.X + pushNx,
+                        safePos.Y + pushNy,
+                        safePos.Z + pushNz}
                 }
             }
 

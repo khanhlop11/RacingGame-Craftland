@@ -41,12 +41,26 @@ static graph KartRank {
         return mStr + ":" + sStr + "." + msStr
     }
 
-    // Đọc kỷ lục hiện tại của người chơi từ Leaderboard
-    // Gán kết quả vào: out var hasRecord bool, out var oldTimeMs int, out var oldTimeFormatted string
-    async func GetPlayerRecord(player entity<Player>, out var hasRecord bool, out var oldTimeMs int, out var oldTimeFormatted string) {
+    RecordedUIDs List<string> = List<string>{}
+
+    func HasRecordedPlayer(uid string) bool {
+        if RecordedUIDs == nil { return false }
+        var cnt = list.Length(RecordedUIDs as List<object>)
+        for i = 0, cnt, 1 {
+            if RecordedUIDs[i] == uid {
+                return true
+            }
+        }
+        return false
+    }
+
+    // Đọc kỷ lục hiện tại của người chơi từ Leaderboard (bao gồm cả số lần chơi Attempts)
+    // Gán kết quả vào: out var hasRecord bool, out var oldTimeMs int, out var oldTimeFormatted string, out var attempts int
+    async func GetPlayerRecord(player entity<Player>, out var hasRecord bool, out var oldTimeMs int, out var oldTimeFormatted string, out var attempts int) {
         hasRecord = false
         oldTimeMs = -1
         oldTimeFormatted = ""
+        attempts = 0
 
         if player == nil {
             return
@@ -63,18 +77,34 @@ static graph KartRank {
                 if colList != nil && list.Length(colList) > 0 {
                     // Cột chính (Int): Thời gian ms để xếp hạng
                     oldTimeMs = colList[0] as int
-                    // Cột phụ 'timer' (String): Chuỗi mm:ss.fff
+                    // Cột phụ 'Time' (String): Chuỗi mm:ss.fff
                     if list.Length(colList) > 1 && colList[1] != nil {
                         oldTimeFormatted = convert.ToString(colList[1])
                     } else {
                         oldTimeFormatted = FormatTimeMs(oldTimeMs)
                     }
-                    hasRecord = true
+                    // Cột phụ 'Attempts' (Int): Số lần chơi
+                    if list.Length(colList) > 2 && colList[2] != nil {
+                        attempts = colList[2] as int
+                    }
+                    if oldTimeMs >= 999999990 {
+                        hasRecord = false
+                        oldTimeMs = -1
+                        oldTimeFormatted = ""
+                    } else {
+                        hasRecord = true
+                    }
                     return
                 } else {
                     oldTimeMs = valObj as int
-                    oldTimeFormatted = FormatTimeMs(oldTimeMs)
-                    hasRecord = true
+                    if oldTimeMs >= 999999990 {
+                        hasRecord = false
+                        oldTimeMs = -1
+                        oldTimeFormatted = ""
+                    } else {
+                        oldTimeFormatted = FormatTimeMs(oldTimeMs)
+                        hasRecord = true
+                    }
                     return
                 }
             }
@@ -86,9 +116,51 @@ static graph KartRank {
             var sVal = singleResult[2]
             if sVal != nil {
                 oldTimeMs = sVal as int
-                oldTimeFormatted = FormatTimeMs(oldTimeMs)
-                hasRecord = true
+                if oldTimeMs >= 999999990 {
+                    hasRecord = false
+                    oldTimeMs = -1
+                    oldTimeFormatted = ""
+                } else {
+                    oldTimeFormatted = FormatTimeMs(oldTimeMs)
+                    hasRecord = true
+                }
             }
+        }
+    }
+
+    // Đếm số lần vào game cho người chơi (chỉ cần vào game là +1, không cần hoàn thành cuộc đua)
+    async func RecordPlayerJoin(player entity<Player>) {
+        if player == nil { return }
+
+        var uidStr = convert.ToString(player<Player>.UserUID)
+        if HasRecordedPlayer(uidStr) {
+            return
+        }
+
+        list.Append(RecordedUIDs as List<object>, uidStr as object)
+
+        // 1. Đọc dữ liệu hiện tại từ Leaderboard
+        GetPlayerRecord(player, out var hasRecord, out var oldTimeMs, out var oldFormatted, out var curAttempts)
+
+        // 2. Tăng số lần chơi lên 1
+        var newAttempts = curAttempts + 1
+        LogInfo("[KartRank] 🎮 Player " + uidStr + " tham gia game! Số lần chơi: " + convert.ToString(curAttempts) + " -> " + convert.ToString(newAttempts))
+
+        var saveTimeMs = oldTimeMs
+        var saveFormatted = oldFormatted
+
+        if !hasRecord || saveTimeMs <= 0 {
+            // Chưa có kỷ lục thời gian nào -> dùng sentinel lớn để không ảnh hưởng top thời gian
+            saveTimeMs = 999999999
+            saveFormatted = "--:--.---"
+        }
+
+        // 3. Cập nhật vào Leaderboard (giữ nguyên kỷ lục cũ nếu có, cập nhật Attempts mới)
+        database.WriteToLeaderboardAssociation(LeaderboardSheetName, uidStr, List<object>{saveTimeMs as object, saveFormatted as object, newAttempts as object}, MapCode, out var sc, out var asc)
+        if sc == StatusCode.NoError {
+            LogInfo("[KartRank] ✅ Đã lưu số lần chơi thành công cho player " + uidStr + " (" + convert.ToString(newAttempts) + " lần)")
+        } else {
+            LogInfo("[KartRank] ⚠️ Ghi số lần chơi thất bại, status: " + convert.ToString(sc) + ", assoc: " + convert.ToString(asc))
         }
     }
 
@@ -105,10 +177,10 @@ static graph KartRank {
         var uidStr = convert.ToString(player<Player>.UserUID)
         var formatted = FormatTimeMs(timeMs)
 
-        // 1. Đọc dữ liệu kỷ lục cũ
-        GetPlayerRecord(player, out var hasOldRecord, out var oldTimeMs, out var oldFormatted)
+        // 1. Đọc dữ liệu kỷ lục cũ và số lần chơi
+        GetPlayerRecord(player, out var hasOldRecord, out var oldTimeMs, out var oldFormatted, out var curAttempts)
 
-        if !hasOldRecord || oldTimeMs <= 0 {
+        if !hasOldRecord || oldTimeMs <= 0 || oldTimeMs >= 999999990 {
             // Chưa có kỷ lục -> Chắc chắn là kỷ lục đầu tiên của người chơi
             isNewRecord = true
             LogInfo("[KartRank] 🌟 Kỷ lục đầu tiên của player " + uidStr + ": " + formatted + " (" + convert.ToString(timeMs) + " ms)")
@@ -122,16 +194,15 @@ static graph KartRank {
             return
         }
 
-        // 2. Ghi kỷ lục mới vào Leaderboard TimerRank
+        // 2. Ghi kỷ lục mới vào Leaderboard TimerRank, bảo lưu Attempts hiện tại
         if isNewRecord {
-            // Ghi cả value (int: ms) và cột timer liên kết (string: mm:ss.fff)
-            database.WriteToLeaderboardAssociation(LeaderboardSheetName, uidStr, List<object>{timeMs as object, formatted as object}, MapCode, out var sc, out var asc)
+            database.WriteToLeaderboardAssociation(LeaderboardSheetName, uidStr, List<object>{timeMs as object, formatted as object, curAttempts as object}, MapCode, out var sc, out var asc)
             if sc != StatusCode.NoError {
                 // Dự phòng nếu bảng không bật cột phụ liên kết
                 database.WriteToLeaderboard(LeaderboardSheetName, uidStr, timeMs, MapCode, out var sc2)
                 LogInfo("[KartRank] Ghi bằng WriteToLeaderboard, status: " + convert.ToString(sc2))
             } else {
-                LogInfo("[KartRank] Đã lưu kỷ lục mới thành công vào TimerRank!")
+                LogInfo("[KartRank] Đã lưu kỷ lục mới thành công vào TimerRank! Attempts: " + convert.ToString(curAttempts))
             }
         }
     }

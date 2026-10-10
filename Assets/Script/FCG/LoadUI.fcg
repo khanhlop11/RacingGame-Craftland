@@ -45,6 +45,10 @@ graph LoadUI {
     Lap2CurrentY float = -100.0
     Lap3CurrentY float = -150.0
     PositionText entity<UIWidget>
+    CinematicBarTop entity<UIWidget>
+    CinematicBarBottom entity<UIWidget>
+    NitroSpeedLinesWidget entity<UIWidget>
+    NitroSpeedLinesAlpha float = 0.0
     FinishWidget entity<UIWidget>
     StartWidget entity<UIWidget>
     Count3Image entity<UIWidget>
@@ -242,6 +246,25 @@ graph LoadUI {
         }
         if (LobbyTimerWidget as entity) != nil {
             LobbyTimerWidget<hud.UIWidget>.IsVisible = true
+        }
+
+        // Widget viền đen điện ảnh Letterbox (Top & Bottom)
+        CinematicBarTop = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/CinematicBarTop")
+        CinematicBarBottom = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/CinematicBarBottom")
+        if (CinematicBarTop as entity) != nil {
+            CinematicBarTop<hud.UIWidget>.IsVisible = false
+            CinematicBarTop<hud.UIWidget>.SizeDelta = Vector2{4000.0, 0.0}
+        }
+        if (CinematicBarBottom as entity) != nil {
+            CinematicBarBottom<hud.UIWidget>.IsVisible = false
+            CinematicBarBottom<hud.UIWidget>.SizeDelta = Vector2{4000.0, 0.0}
+        }
+
+        // Widget vệt tốc độ nhòe xuyên tâm khi Nitro (Radial Blur / Speed Streaks)
+        NitroSpeedLinesWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/NitroSpeedLines")
+        if (NitroSpeedLinesWidget as entity) != nil {
+            NitroSpeedLinesWidget<hud.UIWidget>.IsVisible = false
+            NitroSpeedLinesWidget<UIWidgetImage>.Alpha = 0.0
         }
 
         // Widget Timeout đếm ngược kết thúc trận đấu
@@ -524,7 +547,7 @@ graph LoadUI {
             OpponentLastPacketPos[pIndex] = Vector3{posX, posY, posZ}
         }
 
-        // Tọa độ mục tiêu máy chủ (bù độ trễ mạng 33ms)
+        // Tọa độ mục tiêu máy chủ (bù độ trễ mạng 33ms; hạ -0.80m khớp chính xác cao độ 4 bánh xe chạm mặt đường)
         var serverPos = Vector3{posX + calcVelX * 0.033, posY - 0.80, posZ + calcVelZ * 0.033}
         var targetRot = math.EulerAngleToQuaternion(Vector3{0.0, yaw, 0.0})
         var targetVel = Vector3{calcVelX, 0.0, calcVelZ}
@@ -576,15 +599,10 @@ graph LoadUI {
         var errY = serverPos.Y - OpponentRenderPos[pIndex].Y
         var errZ = serverPos.Z - OpponentRenderPos[pIndex].Z
 
-        // Chống bay xe khi đối thủ dừng hoặc thoát game: xe đã đứng yên thì không nhận sai số nhảy Y lên trời
-        if incomingSpeedSq < 1.0 && errY > 0.4 {
-            errY = 0.0
-        }
-
         var distSq = errX * errX + errY * errY + errZ * errZ
 
-        if distSq > 400.0 {
-            // Hard-snap khi khoảng cách quá lớn (> 20m: respawn / reset)
+        // Hard-snap khi khoảng cách quá lớn (> 10m: respawn / reset) HOẶC chênh lệch độ cao > 1.8m (tránh kẹt dưới lòng đất sau khi hồi sinh)
+        if distSq > 100.0 || math.Abs(errY) > 1.8 {
             OpponentRenderPos[pIndex] = serverPos
             OpponentRenderRot[pIndex] = targetRot
             OpponentVelocity[pIndex] = targetVel
@@ -612,6 +630,63 @@ graph LoadUI {
         var isStarted = thisEntity<rm>.IsRaceStarted
         var isFinished = thisEntity<rm>.CpIsRaceFinished
         var finishHideUi = isFinished && ((thisEntity<rm>.FinishDecelDuration - thisEntity<rm>.FinishDecelTimer) >= 1.0)
+
+        // ==========================================
+        // CINEMATIC LETTERBOX BARS (Top & Bottom)
+        // ==========================================
+        if (CinematicBarTop as entity) == nil && (MyControlUI as entity) != nil {
+            CinematicBarTop = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/CinematicBarTop")
+        }
+        if (CinematicBarBottom as entity) == nil && (MyControlUI as entity) != nil {
+            CinematicBarBottom = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/CinematicBarBottom")
+        }
+        if (CinematicBarTop as entity) != nil && (CinematicBarBottom as entity) != nil && (thisEntity<rm> as entity) != nil {
+            var barHeight = thisEntity<rm>.CinematicBarCurrentHeight
+            if barHeight > 0.5 {
+                CinematicBarTop<hud.UIWidget>.IsVisible = true
+                CinematicBarBottom<hud.UIWidget>.IsVisible = true
+                CinematicBarTop<hud.UIWidget>.SizeDelta = Vector2{4000.0, barHeight}
+                CinematicBarBottom<hud.UIWidget>.SizeDelta = Vector2{4000.0, barHeight}
+            } else {
+                if CinematicBarTop<hud.UIWidget>.IsVisible {
+                    CinematicBarTop<hud.UIWidget>.IsVisible = false
+                    CinematicBarTop<hud.UIWidget>.SizeDelta = Vector2{4000.0, 0.0}
+                }
+                if CinematicBarBottom<hud.UIWidget>.IsVisible {
+                    CinematicBarBottom<hud.UIWidget>.IsVisible = false
+                    CinematicBarBottom<hud.UIWidget>.SizeDelta = Vector2{4000.0, 0.0}
+                }
+            }
+        }
+
+        // ==========================================
+        // NITRO RADIAL SPEED STREAKS EFFECT (Vệt gió nhòe tốc độ cao)
+        // ==========================================
+        if (NitroSpeedLinesWidget as entity) == nil && (MyControlUI as entity) != nil {
+            NitroSpeedLinesWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/NitroSpeedLines")
+        }
+        if (NitroSpeedLinesWidget as entity) != nil && (thisEntity<rm> as entity) != nil {
+            var targetSpeedLinesAlpha = 0.0
+            if !isLobby && !isCountingDown {
+                var nitroBlend = thisEntity<rm>.NitroCamBlend
+                if thisEntity<rm>.IsBoosting || nitroBlend > 0.01 {
+                    targetSpeedLinesAlpha = nitroBlend * 0.85
+                    if targetSpeedLinesAlpha > 0.85 { targetSpeedLinesAlpha = 0.85 }
+                }
+            }
+            NitroSpeedLinesAlpha = math.Lerp(NitroSpeedLinesAlpha, targetSpeedLinesAlpha, 0.25)
+            if NitroSpeedLinesAlpha < 0.01 {
+                NitroSpeedLinesAlpha = 0.0
+                if NitroSpeedLinesWidget<hud.UIWidget>.IsVisible {
+                    NitroSpeedLinesWidget<hud.UIWidget>.IsVisible = false
+                }
+            } else {
+                if !NitroSpeedLinesWidget<hud.UIWidget>.IsVisible {
+                    NitroSpeedLinesWidget<hud.UIWidget>.IsVisible = true
+                }
+                NitroSpeedLinesWidget<UIWidgetImage>.Alpha = NitroSpeedLinesAlpha
+            }
+        }
 
         // ==========================================
         // RACE STOPWATCH TIMER & FINISH LERP ANIMATION

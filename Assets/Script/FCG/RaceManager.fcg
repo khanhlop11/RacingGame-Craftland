@@ -16,7 +16,7 @@ import "Player.fcc" as player
 [platform_server]
 graph RaceManager {
     RaceState       int   = 0 
-    LobbyDurationConfig float = 77.0 // CẤU HÌNH THỜI GIAN PHÒNG CHỜ (Mặc định 30s để tiện test và tùy chỉnh)
+    LobbyDurationConfig float = 55.0 // CẤU HÌNH THỜI GIAN PHÒNG CHỜ (Mặc định 30s để tiện test và tùy chỉnh)
     GlobalLobbyTimer float = 20.0 // Đếm ngược phòng chờ đồng bộ toàn server
     CountdownTimer  float = 5.0   // 2.0s chờ camera chuyển góc + 3.0s đếm ngược 3-2-1
     HasSentCountdown bool = false
@@ -100,6 +100,13 @@ graph RaceManager {
         InitIntroCameras()
         InitPlayerArrays()
         // LogInfo("[RaceManager] Đã khởi tạo Server. Bắt đầu đếm ngược tải Map...")
+    }
+
+    event OnPlayerJoin(player entity<Player>) {
+        if player != nil {
+            GetPlayerSlot(player)
+            kartRank.RecordPlayerJoin(player)
+        }
     }
 
     // KHỞI TẠO TỌA ĐỘ CHECKPOINT
@@ -496,16 +503,23 @@ graph RaceManager {
             hasEnd[initI]    = false
         }
 
-        // 1. Quét trực tiếp từ thisEntity (PointRoot) giống hệt CheckpointRoot / WaypointRoot
-        ScanIntroMarkersRecursiveServer(thisEntity as entity<Entity>, rawStartP, rawEndP, rawStartR, rawEndR, hasStart, hasEnd)
+        // 1. Quét trực tiếp từ ERes IntroCameraRoot nếu có, hoặc từ thisEntity (PointRoot)
+        var srvScanRoot = EditorGenLib.EResSceneMainScene.IntroCameraRoot as entity<Entity>
+        if srvScanRoot == nil {
+            srvScanRoot = EditorGenLib.EResSceneMainScene.PointRoot as entity<Entity>
+        }
+        if srvScanRoot == nil {
+            srvScanRoot = thisEntity as entity<Entity>
+        }
+        ScanIntroMarkersRecursiveServer(srvScanRoot, rawStartP, rawEndP, rawStartR, rawEndR, hasStart, hasEnd)
 
-        // 2. Dự phòng: nếu IntroCameraRoot được đặt ngoài PointRoot, quét thêm parent của PointRoot
+        // 2. Dự phòng: nếu chưa thấy marker nào, quét thêm parent của scanRoot
         var foundAny = false
         for chkI = 0, 9, 1 {
             if hasStart[chkI] || hasEnd[chkI] { foundAny = true }
         }
         if !foundAny {
-            var pRoot = std.GetParent(thisEntity as entity<Entity>)
+            var pRoot = std.GetParent(srvScanRoot)
             if pRoot != nil {
                 ScanIntroMarkersRecursiveServer(pRoot, rawStartP, rawEndP, rawStartR, rawEndR, hasStart, hasEnd)
             }
@@ -538,8 +552,45 @@ graph RaceManager {
         }
 
         TotalIntroShots = validShots
-        if TotalIntroShots > 0 {
-            // LogInfo("[RaceManager_IntroCam] Quét thành công " + convert.ToString(TotalIntroShots) + " góc IntroCameraRoot từ Scene:")
+        if TotalIntroShots <= 0 {
+            // Nạp dữ liệu fallback chuẩn đã đo trực tiếp từ Scene Studio:
+            IntroP_StartX[0] = 156.29
+            IntroP_StartY[0] = 63.55
+            IntroP_StartZ[0] = 65.58
+            IntroP_EndX[0]   = -175.46
+            IntroP_EndY[0]   = 90.64
+            IntroP_EndZ[0]   = -130.71
+            IntroR_StartYaw[0] = 213.76
+            IntroR_EndYaw[0]   = 149.64
+
+            IntroP_StartX[1] = 200.99
+            IntroP_StartY[1] = 11.35
+            IntroP_StartZ[1] = -462.72
+            IntroP_EndX[1]   = 278.77
+            IntroP_EndY[1]   = 10.74
+            IntroP_EndZ[1]   = -559.38
+            IntroR_StartYaw[1] = 203.51
+            IntroR_EndYaw[1]   = 264.02
+
+            IntroP_StartX[2] = -0.74
+            IntroP_StartY[2] = 0.16
+            IntroP_StartZ[2] = -34.95
+            IntroP_EndX[2]   = 1.14
+            IntroP_EndY[2]   = 1.50
+            IntroP_EndZ[2]   = -60.65
+            IntroR_StartYaw[2] = 0.0
+            IntroR_EndYaw[2]   = 357.44
+
+            IntroP_StartX[3] = 109.11
+            IntroP_StartY[3] = 25.98
+            IntroP_StartZ[3] = -616.30
+            IntroP_EndX[3]   = -140.06
+            IntroP_EndY[3]   = 17.28
+            IntroP_EndZ[3]   = -432.80
+            IntroR_StartYaw[3] = 316.40
+            IntroR_EndYaw[3]   = 204.79
+
+            TotalIntroShots = 4
         }
     }
 
@@ -786,6 +837,7 @@ graph RaceManager {
                 for lI = 0, lCount, 1 {
                     var lp = allPlayersLobby[lI] as entity<Player>
                     if lp != nil {
+                        kartRank.RecordPlayerJoin(lp)
                         var slot = GetPlayerSlot(lp)
                         if slot >= 0 {
                             SendCheckpointUpdate(lp, slot)
@@ -880,6 +932,7 @@ graph RaceManager {
             for i = 0, pCount, 1 {
                 var p = allPlayers[i] as entity<Player>
                 if p == nil { continue }
+                kartRank.RecordPlayerJoin(p)
 
                 var slot = GetPlayerSlot(p)
                 if slot < 0 { continue }

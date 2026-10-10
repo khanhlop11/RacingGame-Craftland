@@ -52,4 +52,32 @@ static graph KartSteeringRuntime {
         if next < -180.0 { next += 360.0 }
         return next as float
     }
+
+    func IsSteeringAwayFromWall(rgtX float, rgtZ float, normX float, normZ float, turnInput float) bool {
+        var sideSign = rgtX * normX + rgtZ * normZ
+        if sideSign < -0.05 && turnInput < -0.05 {
+            return true
+        }
+        if sideSign > 0.05 && turnInput > 0.05 {
+            return true
+        }
+        return false
+    }
+
+    func CalcWallDeflectRate(fwdX float, fwdZ float, normX float, normZ float, alignSharpness float) float {
+        var nLen = math.Sqrt(normX * normX + normZ * normZ) as float
+        if nLen < 0.001 { return 0.0 }
+        var nx = normX / nLen
+        var nz = normZ / nLen
+
+        var tanX = -nz
+        var tanZ = nx
+        if fwdX * tanX + fwdZ * tanZ < 0.0 {
+            tanX = nz
+            tanZ = -nx
+        }
+
+        var crossY = fwdX * tanZ - fwdZ * tanX
+        return crossY * alignSharpness
+    }
 }
