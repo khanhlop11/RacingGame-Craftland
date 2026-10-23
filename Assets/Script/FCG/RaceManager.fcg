@@ -15,6 +15,7 @@ import "Player.fcc" as player
 
 [platform_server]
 graph RaceManager {
+    IsTestMode      bool  = true // [CHẾ ĐỘ TEST NHANH] true = skip phòng chờ & camera intro, nhảy thẳng vào đếm ngược 3-2-1; false = bình thường
     RaceState       int   = 0 
     LobbyDurationConfig float = 55.0 // CẤU HÌNH THỜI GIAN PHÒNG CHỜ (Mặc định 30s để tiện test và tùy chỉnh)
     GlobalLobbyTimer float = 20.0 // Đếm ngược phòng chờ đồng bộ toàn server
@@ -29,7 +30,7 @@ graph RaceManager {
     // =========================================================
     // CHECKPOINT / LAP CONFIG
     // =========================================================
-    TotalLaps           int   = 1   // Số vòng đua (Đặt = 0 để test: cán qua vạch xuất phát/CP đầu tiên là về đích và dừng xe ngay)
+    TotalLaps           int   = 3   // Số vòng đua chuẩn Asphalt 8 (3 laps)
     TotalCheckpoints    int   = 0     // Auto đổi theo marker CP_; không dùng tọa độ hardcode cũ
     CheckpointRadius    float = 25.0  // Bán kính detect checkpoint (mở rộng lên 25m để bao quát toàn bộ mặt đường và drift)
     MaxScannedCheckpoints int = 64    // Giới hạn marker CP_00..CP_63
@@ -93,7 +94,11 @@ graph RaceManager {
 
     event OnAwake() {
         IsInited = true
-        GlobalLobbyTimer = LobbyDurationConfig
+        if IsTestMode {
+            GlobalLobbyTimer = 0.1 // Chế độ test: chờ 0.1s khởi tạo slot rồi vào ngay vạch xuất phát
+        } else {
+            GlobalLobbyTimer = LobbyDurationConfig
+        }
         InitCheckpoints()
         InitWaypoints()
         InitStartSlots()
@@ -109,15 +114,54 @@ graph RaceManager {
         }
     }
 
+    // HELPER: Tìm scene root hoặc tìm node theo tên
+    func GetSceneRoot() entity<Entity> {
+        var anchor = EditorGenLib.EResSceneMainScene.PointRoot as entity<Entity>
+        if anchor == nil {
+            anchor = EditorGenLib.EResSceneMainScene.Sphere as entity<Entity>
+        }
+        var root = anchor
+        if root == nil {
+            root = thisEntity as entity<Entity>
+        }
+        if root == nil { return nil }
+        for step = 0, 20, 1 {
+            var p = std.GetParent(root)
+            if p == nil { break }
+            root = p
+        }
+        return root
+    }
+
+    func FindNodeRecursive(node entity<Entity>, targetName string) entity<Entity> {
+        if node == nil { return nil }
+        if node<Entity>.Name == targetName { return node }
+        var children = std.GetChildren(node)
+        var count = list.Length(children as List<object>)
+        for i = 0, count, 1 {
+            var child = children[i] as entity<Entity>
+            if child != nil {
+                var found = FindNodeRecursive(child, targetName)
+                if found != nil { return found }
+            }
+        }
+        return nil
+    }
+
     // KHỞI TẠO TỌA ĐỘ CHECKPOINT
-    // Ưu tiên quét marker con tên CP_00, CP_01, CP_02... dưới entity gắn RaceManager.
-    // Nếu không quét đủ ít nhất CP_00 + CP_01 thì báo lỗi và không dùng tọa độ cũ.
+    // Quét động toàn bộ marker CP_00..CP_13 từ PointRoot_New (Zero hardcode toạ độ)
     func InitCheckpoints() {
         CheckpointX = list.New(MaxScannedCheckpoints, MaxScannedCheckpoints) as List<float>
         CheckpointY = list.New(MaxScannedCheckpoints, MaxScannedCheckpoints) as List<float>
         CheckpointZ = list.New(MaxScannedCheckpoints, MaxScannedCheckpoints) as List<float>
         ScannedCheckpointMaxIndex = -1
-        ScanCheckpointMarkers(thisEntity as entity<Entity>)
+
+        var prNew = FindNodeRecursive(GetSceneRoot(), "PointRoot_New")
+        var scanTarget = prNew
+        if scanTarget == nil {
+            scanTarget = thisEntity as entity<Entity>
+        }
+        ScanCheckpointMarkers(scanTarget)
 
         if ScannedCheckpointMaxIndex >= 1 {
             TotalCheckpoints = ScannedCheckpointMaxIndex + 1
@@ -126,13 +170,15 @@ graph RaceManager {
         }
 
         TotalCheckpoints = 0
-        LogError("[RaceManager] Không quét đủ CP marker. Hãy gắn RaceManager vào CheckpointRoot và tạo CP_00, CP_01...")
+        LogError("[RaceManager] Không quét đủ CP marker trong PointRoot_New!")
     }
 
     func ScanCheckpointMarkers(node entity<Entity>) {
         if node == nil { return }
 
         var nodeName = node<Entity>.Name
+        if strings.Find(nodeName, "Old_", 0) == 0 { return }
+
         if strings.Find(nodeName, "CP_", 0) == 0 {
             var nameParts = strings.Split(nodeName, "_")
             var partsCount = list.Length(nameParts as List<object>)
@@ -166,13 +212,17 @@ graph RaceManager {
         WaypointY = list.New(MaxScannedWaypoints, MaxScannedWaypoints) as List<float>
         WaypointZ = list.New(MaxScannedWaypoints, MaxScannedWaypoints) as List<float>
         ScannedWaypointMaxIndex = -1
-        var scanRoot = thisEntity as entity<Entity>
-        var parentRoot = std.GetParent(scanRoot)
-        if parentRoot != nil {
-            scanRoot = parentRoot
+
+        var prNew = FindNodeRecursive(GetSceneRoot(), "PointRoot_New")
+        var scanTarget = prNew
+        if scanTarget == nil {
+            scanTarget = thisEntity as entity<Entity>
+            var parentRoot = std.GetParent(scanTarget)
+            if parentRoot != nil {
+                scanTarget = parentRoot
+            }
         }
-        // LogInfo("[RaceManager] Scan WP from direct parent: " + scanRoot<Entity>.Name)
-        ScanWaypointMarkers(scanRoot)
+        ScanWaypointMarkers(scanTarget)
 
         if ScannedWaypointMaxIndex >= 1 {
             TotalWaypoints = ScannedWaypointMaxIndex + 1
@@ -181,13 +231,15 @@ graph RaceManager {
         }
 
         TotalWaypoints = 0
-        LogError("[RaceManager] Không quét đủ WP marker. Wrong-way sẽ không hoạt động.")
+        LogError("[RaceManager] Không quét đủ WP marker trong PointRoot_New! Wrong-way sẽ không hoạt động.")
     }
 
     func ScanWaypointMarkers(node entity<Entity>) {
         if node == nil { return }
 
         var nodeName = node<Entity>.Name
+        if strings.Find(nodeName, "Old_", 0) == 0 { return }
+
         if strings.Find(nodeName, "WP_", 0) == 0 {
             var nameParts = strings.Split(nodeName, "_")
             var partsCount = list.Length(nameParts as List<object>)
@@ -232,19 +284,15 @@ graph RaceManager {
             HasStartSlot[i] = false
         }
 
-        // Tìm root cao nhất của scene để quét được mọi nhóm (PointRoot, Start_Root...)
-        var sceneRoot = thisEntity as entity<Entity>
-        for step = 0, 20, 1 {
-            var p = std.GetParent(sceneRoot)
-            if p == nil { break }
-            sceneRoot = p
+        var prNew = FindNodeRecursive(GetSceneRoot(), "PointRoot_New")
+        if prNew != nil {
+            ScanStartSlotMarkers(prNew)
         }
-        ScanStartSlotMarkers(sceneRoot)
-
+        if TotalStartSlots == 0 {
+            ScanStartSlotMarkers(GetSceneRoot())
+        }
         if TotalStartSlots == 0 {
             ScanStartSlotMarkers(thisEntity as entity<Entity>)
-            var pr = std.GetParent(thisEntity as entity<Entity>)
-            if pr != nil { ScanStartSlotMarkers(pr) }
         }
     }
 
@@ -252,6 +300,8 @@ graph RaceManager {
         if node == nil { return }
 
         var nodeName = node<Entity>.Name
+        if strings.Find(nodeName, "Old_", 0) == 0 { return }
+
         var isSlotMarker = false
         var idxStr = ""
 
@@ -737,8 +787,8 @@ graph RaceManager {
         return yaw
     }
 
-    // Tính progress score cho ranking dựa trên Checkpoint + khoảng cách tới CP tiếp theo:
-    // Score = (lap * 1,000,000) + (effectiveCP * 10,000) + (10,000 - distToNextCP)
+    // Tính progress score cho ranking dựa trên thuật toán Asphalt 8 Cleanroom (Vector Projection):
+    // Score = (lap * 1,000,000) + (currCP * 10,000) + (u * 10,000)
     func GetProgressScore(slot int) float {
         var p = PlayerEntities[slot] as entity<Player>
         if p == nil { return -1.0 }
@@ -758,20 +808,27 @@ graph RaceManager {
         }
 
         var nextCP = PlayerNextCP[slot] as int
-        var cpIndexForScore = nextCP
-        if nextCP == 0 {
-            cpIndexForScore = TotalCheckpoints
+        var currCP = nextCP - 1
+        if currCP < 0 {
+            currCP = TotalCheckpoints - 1
         }
 
         var playerPos = p<rms>.TargetPos
-        var targetCpX = CheckpointX[nextCP]
-        var targetCpZ = CheckpointZ[nextCP]
-        var distToTargetCP = DistXZ(playerPos.X, playerPos.Z, targetCpX, targetCpZ)
-        
-        var subScore = 10000.0 - distToTargetCP
-        if subScore < 0.0 { subScore = 0.0 }
 
-        var cpScore = (cpIndexForScore as float) * 10000.0 + subScore
+        // Asphalt 8 Cleanroom Formula: Vector Projection onto track segment
+        var segX = CheckpointX[nextCP] - CheckpointX[currCP]
+        var segZ = CheckpointZ[nextCP] - CheckpointZ[currCP]
+        var segLenSq = segX * segX + segZ * segZ
+        if segLenSq < 0.001 { segLenSq = 0.001 }
+
+        var toCarX = playerPos.X - CheckpointX[currCP]
+        var toCarZ = playerPos.Z - CheckpointZ[currCP]
+
+        var u = (toCarX * segX + toCarZ * segZ) / segLenSq
+        if u > 1.0 { u = 1.0 }
+        if u < 0.0 { u = 0.0 }
+
+        var cpScore = ((currCP as float) * 10000.0) + (u * 10000.0)
         return baseScore + cpScore
     }
 
@@ -813,6 +870,9 @@ graph RaceManager {
         std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{200 + pos})
         std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{300 + nextCP})
         std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{400 + TotalLaps})
+        if TotalStartSlots > 0 {
+            std.DispatchEventToEntity(onRaceCommand, p, PlatformType.Client, List<int>{600 + TotalStartSlots})
+        }
 
         // Gửi respawn position + yaw trực tiếp cho Client (cpIndex=99 = respawn)
         SyncCoordinate(p, 99, 0, PlayerRespawnX[slot] as float)
@@ -851,7 +911,11 @@ graph RaceManager {
             if GlobalLobbyTimer <= 0.0 {
                 GlobalLobbyTimer = 0.0
                 RaceState = 1
-                CountdownTimer = 5.0
+                if IsTestMode {
+                    CountdownTimer = 3.0 // Chế độ test: nhảy thẳng vào đếm ngược 3-2-1
+                } else {
+                    CountdownTimer = 5.0 // 2.0s chờ camera chuyển góc + 3.0s đếm ngược 3-2-1
+                }
                 HasSentCountdown = false
                 LastLoggedSec = -1
                 LastCountdownBroadcastSec = -1

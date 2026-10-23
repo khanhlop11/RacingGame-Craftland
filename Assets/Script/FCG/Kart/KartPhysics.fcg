@@ -8,8 +8,20 @@ import "Math.fcc" as math
 static graph KartPhysics {
     func ApplyVelocityAssist(kartModel entity<Rigidbody>, vel Vector3, targetVelX float, targetVelY float, targetVelZ float, assist float) {
         if kartModel == nil { return }
+        physics.Wakeup(kartModel)
+        if kartModel<Rigidbody>.Constrain != (112 as RigidbodyConstrainType) {
+            kartModel<Rigidbody>.Constrain = 112 as RigidbodyConstrainType
+        }
+        var curRbVel = kartModel<Rigidbody>.Velocity
+        var newX = targetVelX
+        var newZ = targetVelZ
+        var newY = curRbVel.Y + (targetVelY - curRbVel.Y) * assist
+        if targetVelY > curRbVel.Y {
+            newY = targetVelY
+        }
+        kartModel<Rigidbody>.Velocity = Vector3{newX, newY, newZ}
         physics.AddForce(kartModel as PhysicalObject,
-            Vector3{(targetVelX - vel.X) * assist, (targetVelY - vel.Y) * assist, (targetVelZ - vel.Z) * assist},
+            Vector3{targetVelX - vel.X, targetVelY - vel.Y, targetVelZ - vel.Z},
             ForceType.Velocity)
     }
 
@@ -27,7 +39,7 @@ static graph KartPhysics {
 
     func ApplySuspensionForce(kartModel entity<Rigidbody>, nx float, ny float, nz float, suspForce float) {
         if kartModel == nil { return }
-        if suspForce > 0.01 {
+        if math.Abs(suspForce) > 0.01 {
             physics.AddForce(kartModel as PhysicalObject,
                 Vector3{nx * suspForce, ny * suspForce, nz * suspForce},
                 ForceType.Acceleration)

@@ -4,107 +4,103 @@
 
 import "StdLibrary.fcc" as std
 import "Player.fcc" as player
-import "../RacingMovement.fcg" as rm
+import "../Main_Script/VehicleController.fcg" as vc
 
 [platform_client]
 static graph KartInputActions {
     func IsLocalPlayer(p entity<Player>) bool {
         if p != std.GetLocalPlayer() { return false }
-        if p<rm>.CpIsRaceFinished { return false }
         return true
     }
 
     func PressTurnLeft(p entity<Player>) {
         if IsLocalPlayer(p) {
-            p<rm>.IsTurningLeft = true
+            p<vc>.IsTurningLeft = true
+            p<vc>.IsTurningRight = false
         }
     }
 
     func ReleaseTurnLeft(p entity<Player>) {
         if IsLocalPlayer(p) {
-            p<rm>.IsTurningLeft = false
-            if !p<rm>.IsTurningRight {
-                p<rm>.IsDoubleTapDrifting = false
-                if !p<rm>.IsBrakeBtnPressed {
-                    p<rm>.IsBraking = false
-                }
-            }
+            p<vc>.IsTurningLeft = false
         }
     }
 
     func DoubleTapTurnLeft(p entity<Player>) {
         if IsLocalPlayer(p) {
-            p<rm>.IsTurningLeft = true
-            p<rm>.IsDoubleTapDrifting = true
-            p<rm>.IsBraking = true
-            if p<rm>.IsBoosting { p<rm>.IsBoosting = false; p<rm>.IsNitroRecovering = true }
+            p<vc>.IsTurningLeft = true
+            p<vc>.IsTurningRight = false
+            p<vc>.IsBraking = true
+            p<vc>.BrakeTapTimer = 0.40
         }
     }
 
     func PressTurnRight(p entity<Player>) {
         if IsLocalPlayer(p) {
-            p<rm>.IsTurningRight = true
+            p<vc>.IsTurningRight = true
+            p<vc>.IsTurningLeft = false
         }
     }
 
     func ReleaseTurnRight(p entity<Player>) {
         if IsLocalPlayer(p) {
-            p<rm>.IsTurningRight = false
-            if !p<rm>.IsTurningLeft {
-                p<rm>.IsDoubleTapDrifting = false
-                if !p<rm>.IsBrakeBtnPressed {
-                    p<rm>.IsBraking = false
-                }
-            }
+            p<vc>.IsTurningRight = false
         }
     }
 
     func DoubleTapTurnRight(p entity<Player>) {
         if IsLocalPlayer(p) {
-            p<rm>.IsTurningRight = true
-            p<rm>.IsDoubleTapDrifting = true
-            p<rm>.IsBraking = true
-            if p<rm>.IsBoosting { p<rm>.IsBoosting = false; p<rm>.IsNitroRecovering = true }
+            p<vc>.IsTurningRight = true
+            p<vc>.IsTurningLeft = false
+            p<vc>.IsBraking = true
+            p<vc>.BrakeTapTimer = 0.40
         }
     }
 
     func PressBrake(p entity<Player>) {
         if IsLocalPlayer(p) {
-            p<rm>.IsBrakeBtnPressed = true
-            p<rm>.IsBraking = true
-
-            // Drift input cancels boost, same as old button behavior.
-            if p<rm>.IsBoosting { p<rm>.IsBoosting = false; p<rm>.IsNitroRecovering = true }
+            p<vc>.IsBraking = true
+            p<vc>.BrakeTapTimer = 0.40
         }
     }
 
     func ReleaseBrake(p entity<Player>) {
         if IsLocalPlayer(p) {
-            p<rm>.IsBrakeBtnPressed = false
-            if !p<rm>.IsDoubleTapDrifting {
-                p<rm>.IsBraking = false
-            }
+            p<vc>.IsBraking = false
         }
     }
 
     func PressReverse(p entity<Player>) {
         if IsLocalPlayer(p) {
-            p<rm>.IsReversing = true
+            p<vc>.IsReversing = true
+            p<vc>.IsBraking = true
         }
     }
 
     func ReleaseReverse(p entity<Player>) {
         if IsLocalPlayer(p) {
-            p<rm>.IsReversing = false
+            p<vc>.IsReversing = false
+            p<vc>.IsBraking = false
         }
     }
 
     func PressBoost(p entity<Player>) {
         if IsLocalPlayer(p) {
-            if p<rm>.HasNitro && p<rm>.NitroCharge > 0.05 {
-                p<rm>.IsBoosting = true
-                LogInfo("🚀 NITRO! (" + p<rm>.NitroCharge + "s còn lại)")
+            if p<vc>.CurrentNitro > 5.0 {
+                p<vc>.IsBoosting = true
             }
+        }
+    }
+
+    func ReleaseBoost(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<vc>.IsBoosting = false
+        }
+    }
+
+    func ResetCar(p entity<Player>) {
+        if IsLocalPlayer(p) {
+            p<vc>.ResetToStart()
         }
     }
 }

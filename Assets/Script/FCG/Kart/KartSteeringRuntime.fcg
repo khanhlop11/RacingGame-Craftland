@@ -17,22 +17,27 @@ static graph KartSteeringRuntime {
         var curUp = math.RotateVector(Vector3{0.0, 1.0, 0.0}, physicsQuat)
         var alignQ = math.QuaternionFromToRotation(curUp, Vector3{nx, ny, nz})
         var targetQ = math.MultiplyQuaternion(alignQ, physicsQuat)
-        var alignSharp = 7.5
-        if isDriftActive { alignSharp = 3.8 }
+        var alignSharp = 10.0
+        if ny < 0.98 {
+            alignSharp = 16.0
+        }
+        if isDriftActive {
+            alignSharp = 6.0
+            if ny < 0.98 { alignSharp = 10.0 }
+        }
         var nextQ = math.SlerpQuaternion(physicsQuat, targetQ, dt * alignSharp)
 
-        // Chống nghiêng xe (Anti-Roll): Giới hạn góc Roll của xe tối đa [-8°, 8°]
-        // Đảm bảo xe luôn phẳng lì, đầm chắc như khối cầu 3.0, không bị taluy bẻ nghiêng
+        // Giới hạn góc Roll của xe [-35°, 35°] để xe có thể ôm cua nghiêng và đường gồ ghề tự nhiên
         var euler = math.QuaternionToEulerAngle(nextQ)
         var roll = euler.Z
         if roll > 180.0 { roll -= 360.0 }
         if roll < -180.0 { roll += 360.0 }
-        if roll > 8.0 {
-            euler.Z = 8.0
+        if roll > 35.0 {
+            euler.Z = 35.0
             nextQ = math.EulerAngleToQuaternion(euler)
         }
-        if roll < -8.0 {
-            euler.Z = -8.0
+        if roll < -35.0 {
+            euler.Z = -35.0
             nextQ = math.EulerAngleToQuaternion(euler)
         }
         return nextQ as Quaternion

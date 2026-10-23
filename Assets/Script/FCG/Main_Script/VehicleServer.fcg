@@ -1,0 +1,79 @@
+import "Math.fcc" as math
+import "StdLibrary.fcc" as std
+import "EditorGenLib.fcc" as EditorGenLib
+import "List.fcc" as list
+import "Convert.fcc" as convert
+
+// ============================================================
+// VehicleServer.fcg
+// Server-side Relay Multiplayer cho bộ điều khiển xe Asphalt 8
+// Gắn vào: PlayerEntity (Chạy trên Server)
+// Chỉ sử dụng các file trong thư mục Main_Script
+// ============================================================
+
+[platform_server]
+graph VehicleServer {
+
+    event SyncOpponentClient(pIndex int, carIndex int, posX float, posY float, posZ float, yaw float, velX float, velZ float, isDrifting int, senderUid string) {}
+
+    event SyncKartStateServer(posX float, posY float, posZ float, yaw float, velX float, velY float, velZ float, score float, isDrifting float) {
+        var senderPlayer = thisEntity as entity<Player>
+        if senderPlayer == nil { return }
+
+        var allPlayers = std.GetAllPlayers()
+        var pCount = list.Length(allPlayers as List<object>)
+        if pCount <= 0 { return }
+
+        // Xác định slot từ index của senderPlayer trong danh sách Server (0..4)
+        var senderSlot = 0
+        for sI = 0, pCount, 1 {
+            if allPlayers[sI] == senderPlayer {
+                senderSlot = sI
+                break
+            }
+        }
+        if senderSlot >= 8 { senderSlot = 7 }
+
+        // HOST-AUTHORITATIVE BOT RELAY (CHỈ CHO PHÉP HOST SENDER SLOT 0 RELAY BOT)
+        if isDrifting >= 100.5 {
+            if senderSlot != 0 { return }
+            var botSlot = 1
+            if isDrifting >= 103.5 {
+                botSlot = 4
+            } else if isDrifting >= 102.5 {
+                botSlot = 3
+            } else if isDrifting >= 101.5 {
+                botSlot = 2
+            }
+            if botSlot >= 1 && botSlot <= 4 {
+                var botCarIdx = 1
+                var botDrift = 2
+                var bScoreStr = convert.ToString(score)
+                for rI = 0, pCount, 1 {
+                    var pTarget = allPlayers[rI] as entity<Player>
+                    if pTarget == nil { continue }
+                    if pTarget == senderPlayer || rI == senderSlot { continue }
+
+                    std.DispatchEventToEntity(SyncOpponentClient, pTarget, PlatformType.Client, List<object>{botSlot as object, botCarIdx as object, posX as object, posY as object, posZ as object, yaw as object, velX as object, velZ as object, botDrift as object, bScoreStr as object})
+                }
+            }
+            return
+        }
+
+        var carIdx = 1
+        var driftInt = 0
+        if isDrifting > 0.5 { driftInt = 1 }
+
+        var scoreStr = convert.ToString(score)
+
+        // Relay toạ độ, vận tốc và điểm tiến độ liên tục cho TẤT CẢ người chơi khác
+        for rI = 0, pCount, 1 {
+            var pTarget = allPlayers[rI] as entity<Player>
+            if pTarget == nil { continue }
+            if pTarget == senderPlayer || rI == senderSlot { continue }
+
+            std.DispatchEventToEntity(SyncOpponentClient, pTarget, PlatformType.Client, List<object>{senderSlot as object, carIdx as object, posX as object, posY as object, posZ as object, yaw as object, velX as object, velZ as object, driftInt as object, scoreStr as object})
+        }
+    }
+}
+

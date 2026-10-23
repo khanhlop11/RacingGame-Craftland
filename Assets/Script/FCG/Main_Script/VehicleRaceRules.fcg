@@ -1,0 +1,314 @@
+import "Math.fcc" as math
+import "StdLibrary.fcc" as std
+import "Convert.fcc" as convert
+import "Hud.fcc" as hud
+import "List.fcc" as list
+import "../../../../Temp/UGCLanguage/editorGen/EditorGenLib.fcc" as EditorGenLib
+
+// ============================================================================
+// VEHICLE RACE RULES — ASPHALT 8 CLEANROOM RUNTIME (CRAFTLAND ENGINE)
+// Platform: Client Only (Static Helper)
+// Quản lý: Checkpoint, Waypoint, Vòng đua (Laps), Thứ hạng, Sai chiều, Respawn
+// Zero hardcode tọa độ: Dynamic Scan từ EditorGenLib.EResSceneMainScene
+// ============================================================================
+
+[platform_client]
+static graph VehicleRaceRules {
+
+    func FindNodeRecursive(node entity<Entity>, targetName string) entity<Entity> {
+        if node == nil { return nil }
+        if node<Entity>.Name == targetName { return node }
+        var children = std.GetChildren(node)
+        var count = list.Length(children as List<object>)
+        for i = 0, count, 1 {
+            var child = children[i] as entity<Entity>
+            if child != nil {
+                var found = FindNodeRecursive(child, targetName)
+                if found != nil { return found }
+            }
+        }
+        return nil
+    }
+
+    // ------------------------------------------------------------------------
+    // 1. DYNAMIC SCAN TOÀN BỘ MARKER ĐƯỜNG ĐUA TỪ ERes (0 TOẠ ĐỘ CỐ ĐỊNH)
+    // ------------------------------------------------------------------------
+    func ScanTrackData(out var cpPositions List<Vector3>, out var wpPositions List<Vector3>, out var startPositions List<Vector3>, out var startYaws List<float>) {
+        cpPositions = List<Vector3>{}
+        wpPositions = List<Vector3>{}
+        startPositions = List<Vector3>{}
+        startYaws = List<float>{}
+
+        // 1. Quét toàn bộ Checkpoints (CP_00 -> CP_14...)
+        var cpRoot = EditorGenLib.EResSceneMainScene.CheckpointRoot as entity<Entity>
+        if cpRoot == nil {
+            var prNew = EditorGenLib.EResSceneMainScene.PointRoot_New as entity<Entity>
+            if prNew != nil { cpRoot = FindNodeRecursive(prNew, "CheckpointRoot") }
+        }
+        if cpRoot == nil {
+            var prOld = EditorGenLib.EResSceneMainScene.PointRoot as entity<Entity>
+            if prOld != nil { cpRoot = FindNodeRecursive(prOld, "CheckpointRoot") }
+        }
+        if cpRoot != nil {
+            for i = 0, 100, 1 {
+                var cpName = "CP_"
+                if i < 10 {
+                    cpName = cpName + "0" + convert.ToString(i)
+                } else {
+                    cpName = cpName + convert.ToString(i)
+                }
+                var cpEntity = std.GetChildByName(cpRoot, cpName)
+                if cpEntity == nil {
+                    cpEntity = FindNodeRecursive(cpRoot, cpName)
+                }
+                if cpEntity != nil {
+                    list.Append(cpPositions as List<object>, cpEntity<Transform>.Position as object)
+                } else {
+                    // Dừng quét khi không tìm thấy điểm tiếp theo (đã quét ít nhất 3 CP)
+                    if list.Length(cpPositions as List<object>) >= 3 {
+                        break
+                    }
+                }
+            }
+        }
+
+        // 2. Quét Waypoints (MainTrack: WP_00 -> WP_63)
+        var wpRoot = EditorGenLib.EResSceneMainScene.WaypointRoot as entity<Entity>
+        if wpRoot == nil {
+            var prNew = EditorGenLib.EResSceneMainScene.PointRoot_New as entity<Entity>
+            if prNew != nil { wpRoot = FindNodeRecursive(prNew, "WaypointRoot") }
+        }
+        if wpRoot == nil {
+            var prOld = EditorGenLib.EResSceneMainScene.PointRoot as entity<Entity>
+            if prOld != nil { wpRoot = FindNodeRecursive(prOld, "WaypointRoot") }
+        }
+        if wpRoot != nil {
+            var mainTrack = FindNodeRecursive(wpRoot, "MainTrack")
+            var scanRoot = mainTrack
+            if scanRoot == nil { scanRoot = wpRoot }
+            for i = 0, 500, 1 {
+                var wpName = "WP_"
+                if i < 10 {
+                    wpName = wpName + "00" + convert.ToString(i)
+                } else if i < 100 {
+                    wpName = wpName + "0" + convert.ToString(i)
+                } else {
+                    wpName = wpName + convert.ToString(i)
+                }
+                var wpEntity = std.GetChildByName(scanRoot, wpName)
+                if wpEntity == nil {
+                    // Fallback thử định dạng 2 chữ số cũ WP_00..WP_63
+                    if i < 10 {
+                        wpEntity = std.GetChildByName(scanRoot, "WP_0" + convert.ToString(i))
+                    } else if i < 100 {
+                        wpEntity = std.GetChildByName(scanRoot, "WP_" + convert.ToString(i))
+                    }
+                }
+                if wpEntity == nil {
+                    wpEntity = FindNodeRecursive(wpRoot, wpName)
+                }
+                if wpEntity != nil {
+                    list.Append(wpPositions as List<object>, wpEntity<Transform>.Position as object)
+                } else {
+                    // Nếu đã tìm thấy ít nhất 10 điểm mà điểm tiếp theo không có -> Đã quét hết toàn bộ Waypoint
+                    if list.Length(wpPositions as List<object>) > 10 {
+                        break
+                    }
+                }
+            }
+        }
+
+        // 3. Quét Vị trí xuất phát (Start_01 -> Start_05)
+        var startRoot = EditorGenLib.EResSceneMainScene.Start_Root as entity<Entity>
+        if startRoot == nil {
+            var prNew = EditorGenLib.EResSceneMainScene.PointRoot_New as entity<Entity>
+            if prNew != nil { startRoot = FindNodeRecursive(prNew, "Start_Root") }
+        }
+        if startRoot == nil {
+            var prOld = EditorGenLib.EResSceneMainScene.PointRoot as entity<Entity>
+            if prOld != nil { startRoot = FindNodeRecursive(prOld, "Start_Root") }
+        }
+        if startRoot != nil {
+            for i = 1, 6, 1 {
+                var sName = "Start_0" + convert.ToString(i)
+                var sEntity = std.GetChildByName(startRoot, sName)
+                if sEntity == nil {
+                    sEntity = FindNodeRecursive(startRoot, sName)
+                }
+                if sEntity != nil {
+                    list.Append(startPositions as List<object>, sEntity<Transform>.Position as object)
+                    list.Append(startYaws as List<object>, sEntity<Transform>.Rotation.Y as object)
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // 2. TÍNH ĐIỂM TIẾN ĐỘ ĐƯỜNG ĐUA LIÊN TỤC (ASPHALT 8 CONTINUOUS PROGRESS)
+    // ------------------------------------------------------------------------
+    func CalcContinuousProgress(currentLap int, checkpointIndex int, carPos Vector3, currentCpPos Vector3, nextCpPos Vector3) float {
+        var segX = nextCpPos.X - currentCpPos.X
+        var segZ = nextCpPos.Z - currentCpPos.Z
+        var segLenSq = segX * segX + segZ * segZ
+        if segLenSq < 0.001 { segLenSq = 0.001 }
+
+        var toCarX = carPos.X - currentCpPos.X
+        var toCarZ = carPos.Z - currentCpPos.Z
+
+        var u = (toCarX * segX + toCarZ * segZ) / segLenSq
+        if u > 1.0 { u = 1.0 }
+        if u < -1.0 { u = -1.0 }
+
+        var score = ((currentLap as float) * 100000.0) + ((checkpointIndex as float) * 1000.0) + (u * 1000.0)
+        return score as float
+    }
+
+    // ------------------------------------------------------------------------
+    // 3. KIỂM TRA XE CHẠY NGƯỢC CHIỀU (ASPHALT 8 WRONG-WAY DETECTION)
+    // ------------------------------------------------------------------------
+    func IsWrongWayDirection(carPos Vector3, carYaw float, wpPositions List<Vector3>, cpPositions List<Vector3>, currentCpIndex int) bool {
+        // Vector hướng mũi xe (XZ plane)
+        var carFwdX = math.Sin(carYaw)
+        var carFwdZ = math.Cos(carYaw)
+
+        // Tìm hướng tiếp tuyến đường đua chuẩn
+        var trackDirX = 0.0
+        var trackDirZ = 0.0
+        var foundDir = false
+
+        // Cách 1: Dùng Waypoint gần nhất nếu có danh sách WP
+        var wpCount = list.Length(wpPositions as List<object>)
+        if wpCount >= 2 {
+            var bestDistSq = 999999.0
+            var bestIdx = 0
+            for i = 0, wpCount, 1 {
+                var wp = wpPositions[i]
+                var dx = carPos.X - wp.X
+                var dz = carPos.Z - wp.Z
+                var d2 = dx * dx + dz * dz
+                if d2 < bestDistSq {
+                    bestDistSq = d2
+                    bestIdx = i
+                }
+            }
+            var nextWpIdx = bestIdx + 1
+            if nextWpIdx >= wpCount {
+                nextWpIdx = 0
+            }
+            trackDirX = wpPositions[nextWpIdx].X - wpPositions[bestIdx].X
+            trackDirZ = wpPositions[nextWpIdx].Z - wpPositions[bestIdx].Z
+            foundDir = true
+        }
+
+        // Cách 2: Dùng Checkpoint phân đoạn hiện tại nếu chưa có WP
+        var cpCount = list.Length(cpPositions as List<object>)
+        if !foundDir && cpCount >= 2 {
+            var nextCp = currentCpIndex + 1
+            if nextCp >= cpCount {
+                nextCp = 0
+            }
+            trackDirX = cpPositions[nextCp].X - cpPositions[currentCpIndex].X
+            trackDirZ = cpPositions[nextCp].Z - cpPositions[currentCpIndex].Z
+            foundDir = true
+        }
+
+        if !foundDir { return false }
+
+        var trackLen = math.Sqrt(trackDirX * trackDirX + trackDirZ * trackDirZ)
+        if trackLen < 0.001 { return false }
+        trackDirX = trackDirX / trackLen
+        trackDirZ = trackDirZ / trackLen
+
+        // Tích vô hướng cos góc lệch giữa xe và đường đua
+        var dot = carFwdX * trackDirX + carFwdZ * trackDirZ
+
+        // Chuẩn Asphalt 8: góc lệch > 105° (dot < -0.25)
+        return (dot < -0.25) as bool
+    }
+
+    // ------------------------------------------------------------------------
+    // 4. KIỂM TRA QUA CHECKPOINT & ĐẾM VÒNG (RACE PROGRESSION)
+    // ------------------------------------------------------------------------
+    func CheckCheckpointHit(carPos Vector3, cpPositions List<Vector3>, nextCpIndex int) bool {
+        var cpCount = list.Length(cpPositions as List<object>)
+        if cpCount < 2 { return false }
+        if nextCpIndex < 0 || nextCpIndex >= cpCount { return false }
+
+        var targetCp = cpPositions[nextCpIndex]
+        var dx = carPos.X - targetCp.X
+        var dz = carPos.Z - targetCp.Z
+        var distSq = dx * dx + dz * dz
+
+        // Bán kính nhận diện Checkpoint: 28.0m (bảo đảm nhận cả khi ôm cua rộng hay bay dốc)
+        return (distSq <= (28.0 * 28.0)) as bool
+    }
+
+    // ------------------------------------------------------------------------
+    // 5. TÍNH TOÁN TOẠ ĐỘ & GÓC RESPAWN VỀ CHECKPOINT HỢP LỆ GẦN NHẤT
+    // ------------------------------------------------------------------------
+    func GetRespawnPosition(lastPassedCpIndex int, cpPositions List<Vector3>, startPositions List<Vector3>) Vector3 {
+        var cpCount = list.Length(cpPositions as List<object>)
+        if cpCount >= 2 && lastPassedCpIndex > 0 && lastPassedCpIndex < cpCount {
+            var cp = cpPositions[lastPassedCpIndex]
+            return Vector3{cp.X, cp.Y + 0.75, cp.Z}
+        }
+        var startCount = list.Length(startPositions as List<object>)
+        if startCount > 0 {
+            var sp = startPositions[0]
+            return Vector3{sp.X, sp.Y + 0.75, sp.Z}
+        }
+        if cpCount > 0 {
+            var cp0 = cpPositions[0]
+            return Vector3{cp0.X, cp0.Y + 0.75, cp0.Z}
+        }
+        return Vector3{0.0, 5.0, 0.0}
+    }
+
+    func GetRespawnYaw(lastPassedCpIndex int, cpPositions List<Vector3>, startYaws List<float>) float {
+        var cpCount = list.Length(cpPositions as List<object>)
+        if cpCount >= 2 && lastPassedCpIndex > 0 && lastPassedCpIndex < cpCount {
+            var cp = cpPositions[lastPassedCpIndex]
+            var nextIdx = lastPassedCpIndex + 1
+            if nextIdx >= cpCount {
+                nextIdx = 0
+            }
+            var nextCp = cpPositions[nextIdx]
+            var dx = nextCp.X - cp.X
+            var dz = nextCp.Z - cp.Z
+            return math.ATan2(dx, dz)
+        }
+        if list.Length(startYaws as List<object>) > 0 {
+            var sy = startYaws[0]
+            if math.Abs(sy) < 5.0 {
+                sy = 180.0
+            }
+            return sy
+        }
+        return 180.0
+    }
+
+    // ------------------------------------------------------------------------
+    // 6. ĐỊNH DẠNG ĐỒNG HỒ BẤM GIỜ (MM:SS.ms)
+    // ------------------------------------------------------------------------
+    func FormatTimer(elapsed float) string {
+        var totalSec = math.Floor(elapsed)
+        var min = totalSec / 60
+        var sec = totalSec - (min * 60)
+        var msFloat = (elapsed - convert.IntToFloat(totalSec)) * 100.0
+        var ms = math.Floor(msFloat)
+        if ms < 0 { ms = 0 }
+        if ms > 99 { ms = 99 }
+
+        var minStr = convert.ToString(min)
+        if min < 10 { minStr = "0" + minStr }
+
+        var secStr = convert.ToString(sec)
+        if sec < 10 { secStr = "0" + secStr }
+
+        var msStr = convert.ToString(ms)
+        if ms < 10 { msStr = "0" + msStr }
+
+        return minStr + ":" + secStr + "." + msStr
+    }
+}
+

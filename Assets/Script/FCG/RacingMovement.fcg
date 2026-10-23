@@ -46,10 +46,10 @@ graph RacingMovement {
     // - Phase 0 only: comments/regions only. Do not reorder or retune values here.
     // =========================================================    // THÔNG SỐ XE — Nhập thẳng bằng KM/H (đã đồng bộ với đồng hồ)
     // =========================================================
-    SpeedUnitScale      float = 4.0    // Project arcade calibration: 1 physics unit = 144 display km/h (36 x 4)
+    SpeedUnitScale      float = 0.25    // Project arcade calibration: 1 physics unit = 9 display km/h (36 x 0.25) -> TopSpeed ~25-30 m/s physical
 
     TopSpeed            float = 365.0    // Tốc độ tối đa khi chạy thẳng
-    AccelLerpRate       float = 0.18     // Tăng tốc arcade (tăng độ bốc xuất phát lúc đầu)
+    AccelLerpRate       float = 4.0      // Tăng tốc arcade (tăng độ bốc xuất phát lúc đầu)
     BoostLerpRate       float = 1.2      // Lerp rate khi đang boost
     BrakeLerpRate       float = 4.5      // Phanh có lực nhưng không làm xe chết tốc đột ngột
     ReverseSpeed        float = 30.0     // Tốc độ tối đa khi chạy lùi (quay lại trước khi tăng 30%)
@@ -107,10 +107,10 @@ graph RacingMovement {
     Suspension          float = 0.2      // Độ cứng của nhún phuộc (Suspension)
 
     // --- Lightweight suspension (Goal #5, arcade) ---
-    SuspRestLength      float = 0.58     // Desired contact distance when settled (world units) - scaled for 1.6 sphere
-    SuspSpring          float = 60.0     // Soft arcade spring strength (non-bouncy)
-    SuspDamping         float = 55.0     // Heavy damping to eliminate bouncing/oscillation
-    SuspMaxForce        float = 60.0     // Clamp
+    SuspRestLength      float = 0.90     // Desired contact distance when settled (world units) - tuned for Box hover
+    SuspSpring          float = 110.0    // Firm spring force to hold ride height at top speed
+    SuspDamping         float = 45.0     // Critical damping to eliminate harmonic oscillation
+    SuspMaxForce        float = 160.0    // Clamp lực nâng phuộc cao hơn downforce tối đa để xe không sụp gầm
     SuspHitMinNy        float = 0.22     // Ignore near-walls (normal.Y too low)
 
     // --- Fake CCD / Anti-Tunneling ---
@@ -187,6 +187,9 @@ graph RacingMovement {
     MyClientCam     entity<camera.CustomCamera> = nil
     TargetHiddenLayer int = -1
     CameraWatchdogTimer float = 0.0
+
+    // [CHẾ ĐỘ TEST NHANH]
+    IsTestMode                 bool  = true    // true = bỏ qua camera intro & flyby, vào thẳng camera sau xe đếm ngược 3-2-1; false = bình thường
 
     // Cinematic Intro Flycam (Client-Only phòng chờ, quét động từ IntroCameraRoot)
     IsIntroCamActive           bool  = true
@@ -280,9 +283,9 @@ graph RacingMovement {
     CamCollisionMinDist float = 1.2     // Khoảng gần xe tối thiểu khi camera bị ép sát
 
     // Camera Base Perspective (AAA Arcade / Asphalt 8 / Ace Racer framing)
-    // Nâng camera và lùi xa vừa đủ để triệt tiêu biến dạng góc rộng, giữ dáng xe thon gọn và tầm nhìn rộng
-    BaseCamHeight      float = 1.15     // Nâng cao camera lên 1.15m để bao quát rõ mặt đường phía trước qua mui xe
-    BaseCamPitch       float = 6.5      // Góc nhìn chúc 6.5° xuống xe và mặt đường phía trước
+    // Căn chỉnh cao độ và cự ly theo tỷ lệ vàng Dual-Pivot: giữ dáng xe cơ bắp, tầm nhìn thoáng ra đường đua
+    BaseCamHeight      float = 1.45     // Cao độ 1.45m ngang tầm cánh gió sau (chuẩn Ace Racer / Asphalt 8)
+    BaseCamPitch       float = 5.0      // Góc nhìn chúc 5.0° bao quát xe và chân trời phía trước
 
     // Asphalt 8 / Ace Racer Drift Camera: hạ thêm + ngước thêm + nghiêng Dutch Tilt + liếc vào thân xe
     CamDriftHeightDrop float = 0.0      // Runtime: current Y drop offset khi drift
@@ -298,6 +301,7 @@ graph RacingMovement {
     NitroCamBlend      float = 0.0      // Camera-only boost feel blend; does not affect vehicle physics
     NitroCamKickTimer  float = 0.0      // Short camera punch window after Nitro activation
     NitroCamKickDuration float = 0.52
+    SpeedRumbleTimer     float = 0.0      // Timer cho chuoi rung camera native lien tuc theo toc do va nitro
     CamNitroHeightDropMax float = 0.0   // Không hạ thấp camera khi xịt Nitro
     CamNitroPitchUpMax float = 1.0      // Giữ góc nhìn thẳng thoáng khi Nitro
 
@@ -335,6 +339,7 @@ graph RacingMovement {
     PostDriftBoostTimer float = 0.0       // Nitro recovery window sau drift
     CamDriftSlipYaw     float = 0.0       // Camera lag theo góc trượt
     ActiveDriftDir      float = 0.0       // Khóa hướng drift (giữ đà trôi lết và ổn định camera)
+    DriftStraightTimer  float = 0.0       // Thời gian lái thẳng trong drift (Asphalt 8 auto-exit)
 
     // Prefab Registry
     CarPrefabList       List<object> = nil
@@ -370,6 +375,11 @@ graph RacingMovement {
     IsBraking           bool = false    
     IsBrakeBtnPressed   bool = false
     IsDoubleTapDrifting bool = false
+    PrevIsTurningLeft   bool = false
+    PrevIsTurningRight  bool = false
+    DoubleTapLeftTimer  float = 0.0
+    DoubleTapRightTimer float = 0.0
+    DriftBrakeTapTimer  float = 0.0
     IsReversing         bool = false    
 
     // Nitro
@@ -518,6 +528,7 @@ graph RacingMovement {
     // Ground detection results — written by UpdateGroundDetection, read by all
     Frame_IsStrictlyGrounded bool = true   // ≥1 wheel raycast hit
     Frame_HitCount           float = 0.0  // number of corner hits (0–4)
+    Frame_DistDelta          float = 0.0  // deviation from target ride height (+ = submerged, - = airborne)
     Frame_SurfaceNx          float = 0.0  // averaged contact normal X
     Frame_SurfaceNy          float = 1.0  // averaged contact normal Y (default up)
     Frame_SurfaceNz          float = 0.0  // averaged contact normal Z
@@ -558,9 +569,9 @@ graph RacingMovement {
     // =========================================================
     // CAMERA CINEMATICS CONFIG (Asphalt/NFS Speed Pack)
     // =========================================================
-    FovMin          float = 50.0           
-    FovMax          float = 82.0           
-    FovBoost        float = 100.0      // Tốc độ cảm nhận mạnh nhưng vẫn giữ đọc đường
+    FovMin          float = 60.0           
+    FovMax          float = 68.0           
+    FovBoost        float = 76.0      // Capped at 76° to prevent wide-angle fisheye vehicle distortion
     CamFollowSharp  float = 15.0           
     CamRotationSharp float = 12.5
     
@@ -577,6 +588,8 @@ graph RacingMovement {
     CpCurrentLap        int = 1
     CpTotalLaps         int = 3
     CpPosition          int = 1        // Real-time ranking
+    CpTotalPlayers      int = 5        // Số người chơi trong phòng (quét động từ Start_Root)
+    TotalStartSlotsClient int = 0
     CpNextCheckpoint    int = 1
     CpRespawnX          float = 0.0
     CpRespawnY          float = 0.0
@@ -874,6 +887,20 @@ graph RacingMovement {
         IsExternallyLocked = true 
         IsRunning = true
 
+        if IsTestMode {
+            IsIntroCamActive = false
+            IsLobbyActive = false
+            HasSwitchedStartCamera = true
+            CinematicBarTargetHeight = 0.0
+            CinematicBarCurrentHeight = 0.0
+            IsRaceStarted = true
+            IsExternallyLocked = false
+            if KartModel != nil {
+                KartModel<Rigidbody>.Constrain = 112 as RigidbodyConstrainType
+                physics.Wakeup(KartModel as entity<Rigidbody>)
+            }
+        }
+
         // SNAP CAMERA: Nếu đang ở phòng chờ thì giữ góc Intro 1, khi vào game mới snap theo xe
         if MyClientCam != nil {
             var camEnt = MyClientCam as entity<Entity>
@@ -883,12 +910,7 @@ graph RacingMovement {
                     camEnt<Transform>.Rotation = IntroR_Start[0]
                 }
             } else {
-                var initialLocalOffset = Vector3{0.0, 0.2, -4.2}
-                var initialWorldOffset = math.RotateVector(initialLocalOffset, CamQuat)
-                CurrentCamPos = Vector3{PrevPosition.X + initialWorldOffset.X, PrevPosition.Y + initialWorldOffset.Y, PrevPosition.Z + initialWorldOffset.Z}
-                camEnt<Transform>.Position = CurrentCamPos
-                var initEuler = math.QuaternionToEulerAngle(CamQuat)
-                camEnt<Transform>.Rotation = Vector3{0.0, initEuler.Y, 0.0}
+                SnapCameraToKartNow()
             }
         }
 
@@ -901,12 +923,12 @@ graph RacingMovement {
         if KartModel == nil || MyClientCam == nil { return }
         camera.SwitchCustomCameraClient(MyClientCam, camera.CameraTransitionType.Default, 0.0)
         var carPos = KartModel<Transform>.Position
-        var resetOffset = math.RotateVector(Vector3{0.0, 0.2, -4.2}, PhysicsQuat)
+        var resetOffset = math.RotateVector(Vector3{0.0, BaseCamHeight, -6.60}, PhysicsQuat)
         CurrentCamPos = Vector3{carPos.X + resetOffset.X, carPos.Y + resetOffset.Y, carPos.Z + resetOffset.Z}
         var camEntity = MyClientCam as entity<Entity>
         camEntity<Transform>.Position = CurrentCamPos
         var resetEuler = math.QuaternionToEulerAngle(PhysicsQuat)
-        camEntity<Transform>.Rotation = Vector3{0.0, resetEuler.Y, 0.0}
+        camEntity<Transform>.Rotation = Vector3{BaseCamPitch, resetEuler.Y, 0.0}
     }
 
     func NormalizeYawClient(yaw float) float {
@@ -1057,6 +1079,11 @@ graph RacingMovement {
         IsBraking = false
         IsBrakeBtnPressed = false
         IsDoubleTapDrifting = false
+        PrevIsTurningLeft = false
+        PrevIsTurningRight = false
+        DoubleTapLeftTimer = 0.0
+        DoubleTapRightTimer = 0.0
+        DriftBrakeTapTimer = 0.0
         IsBoosting = false
         IsReversing = false
         IsNitroRecovering = false
@@ -1107,6 +1134,7 @@ graph RacingMovement {
     event onRaceCommand(cmdType int) {
         InitClientLists()
         if cmdType >= 6000 && cmdType <= 6999 {
+            if IsTestMode { return }
             if !IsLobbyActive {
                 InitialDefaultCamTimer = 0.0
                 HasSwitchedToIntroCam = false
@@ -1176,7 +1204,7 @@ graph RacingMovement {
                     IntroBlendStartFOV = 65.0
                 }
                 var carPos = KartModel<Transform>.Position
-                var camOffset = math.RotateVector(Vector3{0.0, BaseCamHeight, -4.8}, PhysicsQuat)
+                var camOffset = math.RotateVector(Vector3{0.0, BaseCamHeight, -6.60}, PhysicsQuat)
                 var expectedCamPos = Vector3{carPos.X + camOffset.X, carPos.Y + camOffset.Y, carPos.Z + camOffset.Z}
                 var dx = IntroBlendStartPos.X - expectedCamPos.X
                 var dy = IntroBlendStartPos.Y - expectedCamPos.Y
@@ -1271,7 +1299,7 @@ graph RacingMovement {
             if KartModel != nil {
                 EnforceCorrectStartHeadingClient()
                 // Mở khóa hoàn toàn vật lý để xe bắt đầu chạy
-                KartModel<Rigidbody>.Constrain = 0 as RigidbodyConstrainType
+                KartModel<Rigidbody>.Constrain = 112 as RigidbodyConstrainType
                 physics.Wakeup(KartModel as entity<Rigidbody>)
                 SnapCameraToKartNow()
             }
@@ -1340,6 +1368,7 @@ graph RacingMovement {
             DriveForwardSpeed = 0.0
             IsTurningLeft = false; IsTurningRight = false
             IsBraking = false; IsBrakeBtnPressed = false; IsDoubleTapDrifting = false; IsBoosting = false; IsReversing = false
+            PrevIsTurningLeft = false; PrevIsTurningRight = false; DoubleTapLeftTimer = 0.0; DoubleTapRightTimer = 0.0; DriftBrakeTapTimer = 0.0
             IsNitroRecovering = false
             NitroShakeLoopTimer = 0.0
             PrevFrame_IsCrashing = false
@@ -1471,6 +1500,9 @@ graph RacingMovement {
         } else if cmdType >= 500 && cmdType < 600 {
             // SET TOTAL CHECKPOINTS: cmdType = 500 + totalCP
             CpTotalCheckpoints = cmdType - 500
+        } else if cmdType >= 600 && cmdType < 700 {
+            // SET TOTAL PLAYERS: cmdType = 600 + totalPlayers
+            CpTotalPlayers = cmdType - 600
         } else if cmdType == 8030 {
             // Người đầu tiên về đích: Bắt đầu đếm ngược 30s + 5s kết thúc trận
             FirstFinishTimeoutActive = true
@@ -2201,13 +2233,31 @@ graph RacingMovement {
         }
     }
 
+    func FindNodeClient(node entity<Entity>, targetName string) entity<Entity> {
+        if node == nil { return nil }
+        if node<Entity>.Name == targetName { return node }
+        var children = std.GetChildren(node)
+        var count = list.Length(children as List<object>)
+        for i = 0, count, 1 {
+            var child = children[i] as entity<Entity>
+            if child != nil {
+                var found = FindNodeClient(child, targetName)
+                if found != nil { return found }
+            }
+        }
+        return nil
+    }
+
     // ---------------------------------------------------------
-    // CLIENT-SIDE WP SCAN: quét WP_ markers trực tiếp từ scene
+    // CLIENT-SIDE WP SCAN: quét WP_ markers trực tiếp từ PointRoot_New
     // Không phụ thuộc server event sync (tránh event flooding)
     func ScanWaypointMarkersClient() {
         InitClientLists()
-        // Tìm scene root: đi lên từ Sphere entity hoặc thisEntity
-        var anchor = EditorGenLib.EResSceneMainScene.Sphere as entity<Entity>
+        // Tìm scene root: đi lên từ PointRoot / Sphere entity hoặc thisEntity
+        var anchor = EditorGenLib.EResSceneMainScene.PointRoot as entity<Entity>
+        if anchor == nil {
+            anchor = EditorGenLib.EResSceneMainScene.Sphere as entity<Entity>
+        }
         var root = anchor
         if root == nil {
             root = thisEntity as entity<Entity>
@@ -2222,9 +2272,14 @@ graph RacingMovement {
             if parent == nil { break }
             root = parent
         }
-        // LogInfo("[WP_ClientScan] Scanning from root: " + root<Entity>.Name)
+
+        var prNew = FindNodeClient(root, "PointRoot_New")
+        var scanTarget = root
+        if prNew != nil {
+            scanTarget = prNew
+        }
         WpTotalWaypoints = 0
-        ScanWpNodeRecursive(root, 256)
+        ScanWpNodeRecursive(scanTarget, 256)
         if WpTotalWaypoints < 4 {
             LoadDefaultTrackWaypoints()
         }
@@ -2233,6 +2288,8 @@ graph RacingMovement {
     func ScanWpNodeRecursive(node entity<Entity>, maxWp int) {
         if node == nil { return }
         var nodeName = node<Entity>.Name
+        if strings.Find(nodeName, "Old_", 0) == 0 { return }
+
         if strings.Find(nodeName, "WP_", 0) == 0 {
             var nameParts = strings.Split(nodeName, "_")
             var partsCount = list.Length(nameParts as List<object>)
@@ -2286,7 +2343,11 @@ graph RacingMovement {
     }
 
     func ScanStartSlotsClient() {
-        var anchor = EditorGenLib.EResSceneMainScene.Sphere as entity<Entity>
+        TotalStartSlotsClient = 0
+        var anchor = EditorGenLib.EResSceneMainScene.PointRoot as entity<Entity>
+        if anchor == nil {
+            anchor = EditorGenLib.EResSceneMainScene.Sphere as entity<Entity>
+        }
         var root = anchor
         if root == nil {
             root = thisEntity as entity<Entity>
@@ -2297,12 +2358,22 @@ graph RacingMovement {
             if parent == nil { break }
             root = parent
         }
-        ScanStartSlotNodeRecursive(root)
+        var prNew = FindNodeClient(root, "PointRoot_New")
+        if prNew != nil {
+            ScanStartSlotNodeRecursive(prNew)
+        }
+        if !HasCpRespawn {
+            ScanStartSlotNodeRecursive(root)
+        }
+        if TotalStartSlotsClient > 0 {
+            CpTotalPlayers = TotalStartSlotsClient
+        }
     }
 
     func ScanStartSlotNodeRecursive(node entity<Entity>) {
         if node == nil { return }
         var nodeName = node<Entity>.Name
+        if strings.Find(nodeName, "Old_", 0) == 0 { return }
         var isSlotMarker = false
         var idxStr = ""
 
@@ -2330,6 +2401,9 @@ graph RacingMovement {
             convert.StringToFloat(idxStr, out var parsedIdx, out var parseOk)
             if parseOk {
                 var slotIndex = math.Floor(parsedIdx + 0.5) as int
+                if slotIndex > TotalStartSlotsClient {
+                    TotalStartSlotsClient = slotIndex
+                }
                 if !HasCpRespawn && (slotIndex == 0 || slotIndex == 1) {
                     var p = node<Transform>.Position
                     if math.Abs(p.X) > 0.1 || math.Abs(p.Z) > 0.1 {
@@ -2433,7 +2507,7 @@ graph RacingMovement {
 
     func TriggerNitroInitialKickShake() {
         // Cú giật đề-pa Nitro: Dằn nảy trục Y (0.26) và nhún lùi Z (0.08), triệt tiêu trục ngang X để loại bỏ giật lag hai bên
-        camera.PlayCustomCameraShake(Vector3{0.03, 0.34, 0.12}, 0.42, 22.0, 30, 260, 480)
+        camera.PlayCustomCameraShake(Vector3{0.02, 0.18, 0.08}, 0.28, 24.0, 30, 220, 380)
     }
 
     func TriggerLandingCameraShake(impactForce float) {
@@ -2472,17 +2546,24 @@ graph RacingMovement {
     // - Nitro charge depends on drift-turning state in the main loop.
     // ---------------------------------------------------------
     func UpdateDriftFlow(dt float, isBrakeHeld bool) {
-        if !isBrakeHeld {
-            DriftFlowTimer = 0.0
+        if Frame_IsDriftActive || Frame_IsDrift || isBrakeHeld {
+            DriftFlowTimer = DriftFlowHoldTime
         } else {
-            DriftFlowTimer = KartDriftState.CalcFlowTimerNext(DriftFlowTimer, dt, isBrakeHeld, DriftFlowHoldTime)
+            DriftFlowTimer -= dt
+            if DriftFlowTimer < 0.0 { DriftFlowTimer = 0.0 }
         }
     }
 
-    // Goal #3: explicit drift state transitions (stable + future-tunable).
-    // Keeps existing DriftBlend/DriftFlowTimer feel but centralizes state ownership.
+    // Goal #3: explicit drift state transitions (Asphalt 8 Model).
     func UpdateDriftState(dt float, isStrictlyGrounded bool, raycastHit bool, turnInput float) {
         DriftStateTimer += dt
+
+        // Cập nhật bộ đếm thời gian đi thẳng khi drift (tự thoát drift nếu trả lái thẳng quá 0.35s)
+        if turnInput == 0.0 {
+            DriftStraightTimer += dt
+        } else {
+            DriftStraightTimer = 0.0
+        }
 
         // Air detection: raycastHit is more stable than IsStableGrounded for transitions.
         var isAir = !raycastHit
@@ -2492,10 +2573,14 @@ graph RacingMovement {
             if DriftState != DriftState_CRASH {
                 DriftState = DriftState_CRASH
                 DriftStateTimer = 0.0
+                ActiveDriftDir = 0.0
+                DriftStraightTimer = 0.0
             }
         } else if DriftState == DriftState_CRASH {
             DriftState = DriftState_NORMAL
             DriftStateTimer = 0.0
+            ActiveDriftDir = 0.0
+            DriftStraightTimer = 0.0
         }
 
         if isAir {
@@ -2516,14 +2601,29 @@ graph RacingMovement {
         var hasTurnInput = (IsTurningLeft || IsTurningRight)
         var driftGateSpeedKmh = KartMath.PhysSpeedToDisplaySpeed(math.Abs(DriveForwardSpeed) as float, SpeedUnitScale)
         if CurrentSpeedKmh > driftGateSpeedKmh { driftGateSpeedKmh = CurrentSpeedKmh }
-        if KartDriftState.ShouldEnterDrift(IsBraking, isStrictlyGrounded, DriftState, DriftState_HOLD, DriftState_ENTER, DriftState_AIR, DriftState_LANDING, DriftState_CRASH, driftGateSpeedKmh, 30.0, hasTurnInput) {
+
+        // Kích hoạt Drift: Tốc độ >= 25 KM/H + Bẻ lái + (Nhấp phanh / Bộ đệm phanh / Double-Tap)
+        var driftRequested = IsBraking || (DriftBrakeTapTimer > 0.0) || IsDoubleTapDrifting
+        if KartDriftState.ShouldEnterDrift(driftRequested, isStrictlyGrounded, DriftState, DriftState_HOLD, DriftState_ENTER, DriftState_AIR, DriftState_LANDING, DriftState_CRASH, driftGateSpeedKmh, 25.0, hasTurnInput) {
             DriftState = DriftState_ENTER
             DriftStateTimer = 0.0
             DriftEntryDecelDone = false
             DriftEntryKickDone = false
-        } else if KartDriftState.ShouldExitDrift(IsBraking, DriftState, DriftState_HOLD, DriftState_ENTER, DriftState_AIR, DriftState_LANDING, DriftState_CRASH) {
+            DriftStraightTimer = 0.0
+            DriftBrakeTapTimer = 0.0
+            if turnInput != 0.0 {
+                ActiveDriftDir = turnInput
+            } else if IsTurningLeft {
+                ActiveDriftDir = -1.0
+            } else if IsTurningRight {
+                ActiveDriftDir = 1.0
+            }
+        } else if KartDriftState.ShouldExitDriftAsphalt8(IsBoosting, driftGateSpeedKmh, 20.0, turnInput, ActiveDriftDir, DriftStraightTimer, 0.35, DriftState, DriftState_HOLD, DriftState_ENTER, DriftState_AIR, DriftState_LANDING, DriftState_CRASH) {
             DriftState = DriftState_EXIT
             DriftStateTimer = 0.0
+            ActiveDriftDir = 0.0
+            DriftStraightTimer = 0.0
+            IsDoubleTapDrifting = false
         }
 
         // ENTER → HOLD quickly (keeps current smart-drift entry behavior).
@@ -2575,9 +2675,13 @@ graph RacingMovement {
     }
 
     func CalcSteerRate(turnInput float, isDriftActive bool, speedKmh float, localFwdSpeed float, curLatSpd float, dt float) float {
-        if turnInput == 0.0 { return 0.0 }
+        var effectiveTurn = turnInput
+        if effectiveTurn == 0.0 && isDriftActive && ActiveDriftDir != 0.0 {
+            effectiveTurn = ActiveDriftDir * 0.55
+        }
+        if effectiveTurn == 0.0 { return 0.0 }
 
-        SteerRamp = KartSteeringMath.CalcSteerRampNext(SteerRamp, turnInput, dt, SteerRampSharp)
+        SteerRamp = KartSteeringMath.CalcSteerRampNext(SteerRamp, effectiveTurn, dt, SteerRampSharp)
 
         var baseSteer = KartSteeringMath.CalcBaseSteer(Steer, DriftSteer, DriftBlend, isDriftActive, DriftSteerAuthority, IsBoosting, BoostSteerMult, CalcHighSpeedSteerFactor(speedKmh))
 
@@ -2596,7 +2700,7 @@ graph RacingMovement {
             effectiveSteerRamp = DriftSteerRampFloor + (1.0 - DriftSteerRampFloor) * DriftBlend
         }
 
-        var turnRate = turnInput * baseSteer * effectiveSteerRamp * 10.0 * steerAuthority
+        var turnRate = effectiveTurn * baseSteer * effectiveSteerRamp * 10.0 * steerAuthority
 
         if isDriftActive {
             // Tỉ lệ theo vận tốc: tốc độ càng cao bẻ lái drift càng gắt và dứt khoát
@@ -2638,9 +2742,13 @@ graph RacingMovement {
         // ── FEATURE 2: DRIFT ENTRY KICK ────────────────────────────────────
         // Fire a one-shot lateral impulse the first frame drift becomes active.
         // This creates an arcade rear-swing feeling without pushing the kart off screen.
-        if isDriftActive && !DriftEntryKickDone && turnInput != 0.0 && isGrounded {
-            lat = KartDriftMath.CalcEntryKickLat(lat, turnInput, speedKmh, TopSpeed, DriftEntryKickPower)
-            DriftEntryKickDone = true
+        if isDriftActive && !DriftEntryKickDone && isGrounded {
+            var kickDir = turnInput
+            if kickDir == 0.0 { kickDir = ActiveDriftDir }
+            if kickDir != 0.0 {
+                lat = KartDriftMath.CalcEntryKickLat(lat, kickDir, speedKmh, TopSpeed, DriftEntryKickPower)
+                DriftEntryKickDone = true
+            }
         }
         if !isDriftActive {
             DriftEntryKickDone = false
@@ -2670,8 +2778,8 @@ graph RacingMovement {
 
         if isDriftActive {
             var effectiveTurn = turnInput
-            // Drift Momentum Sustain: Nếu nhả nút rẽ nhưng vẫn giữ nút Drift, xe tiếp tục trôi lết theo đà
-            if effectiveTurn == 0.0 && IsBraking && ActiveDriftDir != 0.0 {
+            // Asphalt 8 Drift Momentum Sustain: Nhả phanh xe vẫn tiếp tục trôi lết mượt mà theo đà ôm cua
+            if effectiveTurn == 0.0 && ActiveDriftDir != 0.0 {
                 effectiveTurn = ActiveDriftDir * 0.75
             }
             if effectiveTurn != 0.0 {
@@ -2998,80 +3106,7 @@ graph RacingMovement {
 
     func LoadDefaultTrackWaypoints() {
         InitClientLists()
-        WpTotalWaypoints = 73
-        WpX[0] = -0.74; WpY[0] = 0.62; WpZ[0] = 9.04
-        WpX[1] = -2.08; WpY[1] = -0.55; WpZ[1] = -93.76
-        WpX[2] = 5.62; WpY[2] = -0.55; WpZ[2] = -178.24
-        WpX[3] = 54.55; WpY[3] = -0.55; WpZ[3] = -249.74
-        WpX[4] = 53.6; WpY[4] = -0.55; WpZ[4] = -274.52
-        WpX[5] = 28.29; WpY[5] = -0.55; WpZ[5] = -295.18
-        WpX[6] = 26.89; WpY[6] = -0.55; WpZ[6] = -328.3
-        WpX[7] = 20.62; WpY[7] = -0.55; WpZ[7] = -353.15
-        WpX[8] = -6.5; WpY[8] = -0.55; WpZ[8] = -367.71
-        WpX[9] = -8.46; WpY[9] = -0.55; WpZ[9] = -391.38
-        WpX[10] = 12.65; WpY[10] = -0.55; WpZ[10] = -400.64
-        WpX[11] = 51.83; WpY[11] = -0.9; WpZ[11] = -383.84
-        WpX[12] = 113.25; WpY[12] = -3.87; WpZ[12] = -349.06
-        WpX[13] = 164.49; WpY[13] = -3.87; WpZ[13] = -331.42
-        WpX[14] = 181.14; WpY[14] = -3.87; WpZ[14] = -340.05
-        WpX[15] = 175.7; WpY[15] = -3.87; WpZ[15] = -357.68
-        WpX[16] = 161.39; WpY[16] = -3.87; WpZ[16] = -372.55
-        WpX[17] = 164.9; WpY[17] = -3.87; WpZ[17] = -398.46
-        WpX[18] = 183.89; WpY[18] = -3.87; WpZ[18] = -407.76
-        WpX[19] = 212.55; WpY[19] = -3.87; WpZ[19] = -406.31
-        WpX[20] = 221.9; WpY[20] = -3.87; WpZ[20] = -424.67
-        WpX[21] = 201.58; WpY[21] = -3.87; WpZ[21] = -449.02
-        WpX[22] = 202.97; WpY[22] = -3.87; WpZ[22] = -474.83
-        WpX[23] = 227.31; WpY[23] = -3.87; WpZ[23] = -483.85
-        WpX[24] = 258.91; WpY[24] = -3.87; WpZ[24] = -482.66
-        WpX[25] = 269.49; WpY[25] = -3.87; WpZ[25] = -502.41
-        WpX[26] = 226.25; WpY[26] = -3.87; WpZ[26] = -541.96
-        WpX[27] = 177.86; WpY[27] = -0.55; WpZ[27] = -575.35
-        WpX[28] = 148.85; WpY[28] = -0.55; WpZ[28] = -585.17
-        WpX[29] = 128.5; WpY[29] = -0.55; WpZ[29] = -570.2
-        WpX[30] = 141.26; WpY[30] = -0.55; WpZ[30] = -542.88
-        WpX[31] = 150.07; WpY[31] = -0.55; WpZ[31] = -522.06
-        WpX[32] = 130.73; WpY[32] = -0.55; WpZ[32] = -514.52
-        WpX[33] = 100.04; WpY[33] = -0.55; WpZ[33] = -509.58
-        WpX[34] = 98.16; WpY[34] = -0.55; WpZ[34] = -487.81
-        WpX[35] = 112.16; WpY[35] = -0.06; WpZ[35] = -455.74
-        WpX[36] = 100.23; WpY[36] = 1.17; WpZ[36] = -429.78
-        WpX[37] = 69.36; WpY[37] = 1.75; WpZ[37] = -420.23
-        WpX[38] = 41.11; WpY[38] = 1.42; WpZ[38] = -429.22
-        WpX[39] = 16.21; WpY[39] = 1.81; WpZ[39] = -465.3
-        WpX[40] = -44.37; WpY[40] = -2.02; WpZ[40] = -534.24
-        WpX[41] = -103.66; WpY[41] = -2.53; WpZ[41] = -578.21
-        WpX[42] = -166.91; WpY[42] = -2.73; WpZ[42] = -625
-        WpX[43] = -197.51; WpY[43] = -2.76; WpZ[43] = -646.47
-        WpX[44] = -250.21; WpY[44] = 0.8; WpZ[44] = -644.41
-        WpX[45] = -256.51; WpY[45] = 2.13; WpZ[45] = -626.65
-        WpX[46] = -230.53; WpY[46] = 2.37; WpZ[46] = -557.88
-        WpX[47] = -277.56; WpY[47] = 2.37; WpZ[47] = -532.34
-        WpX[48] = -273.26; WpY[48] = 2.37; WpZ[48] = -501.16
-        WpX[49] = -239.63; WpY[49] = 2.37; WpZ[49] = -477.1
-        WpX[50] = -180.08; WpY[50] = 2.37; WpZ[50] = -461.73
-        WpX[51] = -166.31; WpY[51] = 2.37; WpZ[51] = -424.74
-        WpX[52] = -176.45; WpY[52] = 2.37; WpZ[52] = -388.25
-        WpX[53] = -221.41; WpY[53] = 2.37; WpZ[53] = -365.04
-        WpX[54] = -220.96; WpY[54] = 2.37; WpZ[54] = -325.98
-        WpX[55] = -205.59; WpY[55] = 2.37; WpZ[55] = -291.55
-        WpX[56] = -224.1; WpY[56] = 2.37; WpZ[56] = -246.78
-        WpX[57] = -290.37; WpY[57] = 2.37; WpZ[57] = -249.82
-        WpX[58] = -346.13; WpY[58] = 2.37; WpZ[58] = -230.69
-        WpX[59] = -356.25; WpY[59] = 2.37; WpZ[59] = -204.49
-        WpX[60] = -325.07; WpY[60] = 2.37; WpZ[60] = -163.4
-        WpX[61] = -292.31; WpY[61] = 2.37; WpZ[61] = -157.78
-        WpX[62] = -252.58; WpY[62] = 2.37; WpZ[62] = -165.68
-        WpX[63] = -229.85; WpY[63] = 2.37; WpZ[63] = -147.17
-        WpX[64] = -192.8; WpY[64] = 2.37; WpZ[64] = -91.22
-        WpX[65] = -153.72; WpY[65] = 2.37; WpZ[65] = -84.89
-        WpX[66] = -116.6; WpY[66] = 2.37; WpZ[66] = -87.68
-        WpX[67] = -101.58; WpY[67] = 2.37; WpZ[67] = -30.65
-        WpX[68] = -112.25; WpY[68] = 2.37; WpZ[68] = 12.48
-        WpX[69] = -115.18; WpY[69] = 2.37; WpZ[69] = 48.16
-        WpX[70] = -62.38; WpY[70] = 2.37; WpZ[70] = 82.19
-        WpX[71] = -32.35; WpY[71] = 2.37; WpZ[71] = 74.07
-        WpX[72] = -7.7; WpY[72] = 2.25; WpZ[72] = 46.76
+        ScanWaypointMarkersClient()
     }
 
     func CatmullRomSpline(p0 Vector3, p1 Vector3, p2 Vector3, p3 Vector3, t float) Vector3 {
@@ -3121,7 +3156,7 @@ graph RacingMovement {
             carYaw = CpRespawnYaw
         }
         var carRotQ = math.EulerAngleToQuaternion(Vector3{0.0, carYaw, 0.0})
-        var carCamOffset = math.RotateVector(Vector3{0.0, BaseCamHeight, -4.8}, carRotQ)
+        var carCamOffset = math.RotateVector(Vector3{0.0, BaseCamHeight, -6.60}, carRotQ)
         var carCamPos = Vector3{carPos.X + carCamOffset.X, carPos.Y + carCamOffset.Y, carPos.Z + carCamOffset.Z}
         var lastDx = WpX[1] - carCamPos.X
         var lastDy = (WpY[1] + FlybyCamHeight) - carCamPos.Y
@@ -3220,7 +3255,7 @@ graph RacingMovement {
         }
         var carRotQ = math.EulerAngleToQuaternion(Vector3{0.0, carYaw, 0.0})
         var carFwdVec = math.RotateVector(Vector3{0.0, 0.0, 1.0}, carRotQ)
-        var carCamOffset = math.RotateVector(Vector3{0.0, BaseCamHeight, -4.8}, carRotQ)
+        var carCamOffset = math.RotateVector(Vector3{0.0, BaseCamHeight, -6.60}, carRotQ)
         var carCamPos = Vector3{carPos.X + carCamOffset.X, carPos.Y + carCamOffset.Y, carPos.Z + carCamOffset.Z}
         var carCamEuler = Vector3{BaseCamPitch, carYaw, 0.0}
 
@@ -3689,10 +3724,11 @@ graph RacingMovement {
                 // Áp dụng trọng lực thật để xe rơi tự do tiếp đất tự nhiên trước khi đếm 3 2 1
                 KartPhysics.ApplyAirGravity(KartModel as entity<Rigidbody>, Gravity, ExtraAirGravity)
                 var curPos = KartModel<Transform>.Position
-                physics.SingleRaycast(curPos, Vector3{0.0, -1.0, 0.0}, 2.5, nil, false,
+                var dropProbePos = Vector3{curPos.X, curPos.Y - 0.20, curPos.Z}
+                physics.SingleRaycast(dropProbePos, Vector3{0.0, -1.0, 0.0}, 2.5, nil, false,
                     out var gEnt, out var gPos, out var gDist, out var gNorm)
                 var hasLanded = false
-                if KartGroundProbe.IsValidHit(gEnt, KartModel as entity<Rigidbody>) && gDist <= 0.83 {
+                if KartGroundProbe.IsValidHit(gEnt, KartModel as entity<Rigidbody>) && gDist <= 0.63 {
                     hasLanded = true
                 }
                 if hasLanded || SpawnDropTimer <= 0.0 {
@@ -3702,8 +3738,13 @@ graph RacingMovement {
                     }
                     KartModel<Rigidbody>.Velocity = Vector3{0.0, 0.0, 0.0}
                     KartModel<Rigidbody>.AngularVelocity = Vector3{0.0, 0.0, 0.0}
-                    KartModel<Rigidbody>.Constrain = 127 as RigidbodyConstrainType
-                    physics.Sleep(KartModel as entity<Rigidbody>)
+                    if !IsRaceStarted {
+                        KartModel<Rigidbody>.Constrain = 127 as RigidbodyConstrainType
+                        physics.Sleep(KartModel as entity<Rigidbody>)
+                    } else {
+                        KartModel<Rigidbody>.Constrain = 112 as RigidbodyConstrainType
+                        physics.Wakeup(KartModel as entity<Rigidbody>)
+                    }
                     if !IsIntroCamActive {
                         SnapCameraToKartNow()
                     }
@@ -3711,10 +3752,18 @@ graph RacingMovement {
             }
         }
 
-        if IsRaceStarted && IsExternallyLocked && !IsLocalResetting && !CpIsRaceFinished {
+        if IsTestMode && (!IsRaceStarted || IsExternallyLocked) && !IsLocalResetting {
+            IsRaceStarted = true
+            IsExternallyLocked = false
+            SpawnDropTimer = 0.0
+            if KartModel != nil {
+                KartModel<Rigidbody>.Constrain = 112 as RigidbodyConstrainType
+                physics.Wakeup(KartModel as entity<Rigidbody>)
+            }
+        } else if IsRaceStarted && IsExternallyLocked && !IsLocalResetting && !CpIsRaceFinished {
             IsExternallyLocked = false
             if KartModel != nil {
-                KartModel<Rigidbody>.Constrain = 0 as RigidbodyConstrainType
+                KartModel<Rigidbody>.Constrain = 112 as RigidbodyConstrainType
                 physics.Wakeup(KartModel as entity<Rigidbody>)
             }
         }
@@ -3737,6 +3786,11 @@ graph RacingMovement {
                     KartModel<Rigidbody>.Constrain = 127 as RigidbodyConstrainType
                     physics.Sleep(KartModel as entity<Rigidbody>)
                 }
+            }
+        } else {
+            if KartModel != nil && KartModel<Rigidbody>.Constrain != (112 as RigidbodyConstrainType) {
+                KartModel<Rigidbody>.Constrain = 112 as RigidbodyConstrainType
+                physics.Wakeup(KartModel as entity<Rigidbody>)
             }
         }
 
@@ -3782,6 +3836,39 @@ graph RacingMovement {
                 } else if IsRaceStarted && !CpIsRaceFinished {
                     RecordReplayFrame(dt)
                 }
+                if DoubleTapLeftTimer > 0.0 { DoubleTapLeftTimer -= dt }
+                if DoubleTapRightTimer > 0.0 { DoubleTapRightTimer -= dt }
+                if DriftBrakeTapTimer > 0.0 { DriftBrakeTapTimer -= dt }
+
+                // Nhận diện Double Tap Turn Left (Bấm A-A nhanh trên PC / Mobile)
+                if IsTurningLeft && !PrevIsTurningLeft {
+                    if DoubleTapLeftTimer > 0.0 {
+                        IsDoubleTapDrifting = true
+                        IsBraking = true
+                        DoubleTapLeftTimer = 0.0
+                    } else {
+                        DoubleTapLeftTimer = 0.35
+                    }
+                }
+
+                // Nhận diện Double Tap Turn Right (Bấm D-D nhanh trên PC / Mobile)
+                if IsTurningRight && !PrevIsTurningRight {
+                    if DoubleTapRightTimer > 0.0 {
+                        IsDoubleTapDrifting = true
+                        IsBraking = true
+                        DoubleTapRightTimer = 0.0
+                    } else {
+                        DoubleTapRightTimer = 0.35
+                    }
+                }
+
+                // Nhận diện Brake Tap (Nhấp phanh / Drift button)
+                if IsBraking && !PrevIsBraking {
+                    DriftBrakeTapTimer = 0.40
+                }
+
+                PrevIsTurningLeft = IsTurningLeft
+                PrevIsTurningRight = IsTurningRight
 
                 var animTurnInput = KartMath.CalcTurnInput(IsTurningLeft, IsTurningRight)
             var visualSpeed = KartMath.DisplaySpeedToPhysSpeed(CurrentSpeedKmh, SpeedUnitScale)
@@ -3816,7 +3903,7 @@ graph RacingMovement {
             }
 
             vel = KartPhysics.ClampTerminalVelocity(KartModel as entity<Rigidbody>, vel, -50.0)
-            vel = KartPhysics.ClampGroundBounceVelocity(KartModel as entity<Rigidbody>, vel, LastContactNy, 0.6)
+            vel = KartPhysics.ClampGroundBounceVelocity(KartModel as entity<Rigidbody>, vel, LastContactNy, 2.5)
 
             var fwdVecFlat = math.RotateVector(Vector3{0.0, 0.0, 1.0}, PhysicsQuat)
             var rgtVecFlat = math.RotateVector(Vector3{1.0, 0.0, 0.0}, PhysicsQuat)
@@ -3838,31 +3925,49 @@ graph RacingMovement {
             // - This is high-risk to extract because anti-gravity, drift validity, camera landing, and downforce depend on it.
             // -------------------------------------------------
             var pos    = KartModel<Transform>.Position
-            var rayY      = pos.Y - 0.12
-            var rayDist   = 1.3
+            var upVec = math.RotateVector(Vector3{0.0, 1.0, 0.0}, PhysicsQuat)
+            var probeHeight = 1.60
+            var probeUpX = upVec.X * probeHeight; var probeUpY = upVec.Y * probeHeight; var probeUpZ = upVec.Z * probeHeight
+            var rayDist   = 3.6
+            var groundRayDir = Vector3{-LastContactNx, -LastContactNy, -LastContactNz}
 
-            physics.SingleRaycast(Vector3{pos.X + fwdX * 0.5 - rgtX * 0.4, rayY, pos.Z + fwdZ * 0.5 - rgtZ * 0.4}, Vector3{-LastContactNx, -LastContactNy, -LastContactNz}, rayDist, nil, false,
+            var flOrigin = Vector3{pos.X + fwdVecFlat.X * 1.75 - rgtVecFlat.X * 0.85 + probeUpX, pos.Y + fwdVecFlat.Y * 1.75 - rgtVecFlat.Y * 0.85 + probeUpY, pos.Z + fwdVecFlat.Z * 1.75 - rgtVecFlat.Z * 0.85 + probeUpZ}
+            var frOrigin = Vector3{pos.X + fwdVecFlat.X * 1.75 + rgtVecFlat.X * 0.85 + probeUpX, pos.Y + fwdVecFlat.Y * 1.75 + rgtVecFlat.Y * 0.85 + probeUpY, pos.Z + fwdVecFlat.Z * 1.75 + rgtVecFlat.Z * 0.85 + probeUpZ}
+            var blOrigin = Vector3{pos.X - fwdVecFlat.X * 1.55 - rgtVecFlat.X * 0.85 + probeUpX, pos.Y - fwdVecFlat.Y * 1.55 - rgtVecFlat.Y * 0.85 + probeUpY, pos.Z - fwdVecFlat.Z * 1.55 - rgtVecFlat.Z * 0.85 + probeUpZ}
+            var brOrigin = Vector3{pos.X - fwdVecFlat.X * 1.55 + rgtVecFlat.X * 0.85 + probeUpX, pos.Y - fwdVecFlat.Y * 1.55 + rgtVecFlat.Y * 0.85 + probeUpY, pos.Z - fwdVecFlat.Z * 1.55 + rgtVecFlat.Z * 0.85 + probeUpZ}
+
+            physics.SingleRaycast(flOrigin, groundRayDir, rayDist, nil, false,
                 out var flEnt, out var flPos, out var flDist, out var flNorm)
-            physics.SingleRaycast(Vector3{pos.X + fwdX * 0.5 + rgtX * 0.4, rayY, pos.Z + fwdZ * 0.5 + rgtZ * 0.4}, Vector3{-LastContactNx, -LastContactNy, -LastContactNz}, rayDist, nil, false,
+            physics.SingleRaycast(frOrigin, groundRayDir, rayDist, nil, false,
                 out var frEnt, out var frPos, out var frDist, out var frNorm)
-            physics.SingleRaycast(Vector3{pos.X - fwdX * 0.4 - rgtX * 0.4, rayY, pos.Z - fwdZ * 0.4 - rgtZ * 0.4}, Vector3{-LastContactNx, -LastContactNy, -LastContactNz}, rayDist, nil, false,
+            physics.SingleRaycast(blOrigin, groundRayDir, rayDist, nil, false,
                 out var blEnt, out var blPos, out var blDist, out var blNorm)
-            physics.SingleRaycast(Vector3{pos.X - fwdX * 0.4 + rgtX * 0.4, rayY, pos.Z - fwdZ * 0.4 + rgtZ * 0.4}, Vector3{-LastContactNx, -LastContactNy, -LastContactNz}, rayDist, nil, false,
+            physics.SingleRaycast(brOrigin, groundRayDir, rayDist, nil, false,
                 out var brEnt, out var brPos, out var brDist, out var brNorm)
 
+            // Tia trung tâm dưới đáy gầm xe dự phòng
+            var cntOrigin = Vector3{pos.X + probeUpX, pos.Y + probeUpY, pos.Z + probeUpZ}
+            physics.SingleRaycast(cntOrigin, groundRayDir, rayDist, nil, false,
+                out var cntEnt, out var cntPos, out var cntDist, out var cntNorm)
+
+            // Tia đón đầu dốc trước mũi xe (Front Slope Lookahead) để xe ngửa lên trước khi mũi va vào chân dốc
+            var slopeProbeOrigin = Vector3{pos.X + fwdX * 2.45, pos.Y + 0.20, pos.Z + fwdZ * 2.45}
+            physics.SingleRaycast(slopeProbeOrigin, groundRayDir, 2.8, nil, false,
+                out var slopeEnt, out var slopePos, out var slopeDist, out var slopeNorm)
+            var slopeHit = KartGroundProbe.IsValidHit(slopeEnt, KartModel as entity<Rigidbody>) && slopeNorm.Y > 0.30
+
             // --- RAYCAST CẠ TƯỜNG (2 BÁNH TRƯỚC BẮN SANG 2 BÊN) ---
-            // Đặt gốc chiếu tại 2 bánh trước (cao độ ngang trục bánh xe pos.Y - 0.15)
-            var flWheelOrigin = Vector3{pos.X + fwdX * 0.65 - rgtX * 0.45, pos.Y - 0.15, pos.Z + fwdZ * 0.65 - rgtZ * 0.45}
-            var frWheelOrigin = Vector3{pos.X + fwdX * 0.65 + rgtX * 0.45, pos.Y - 0.15, pos.Z + fwdZ * 0.65 + rgtZ * 0.45}
+            var flWheelOrigin = Vector3{pos.X + fwdX * 1.75 - rgtX * 0.85, pos.Y + 0.40, pos.Z + fwdZ * 1.75 - rgtZ * 0.85}
+            var frWheelOrigin = Vector3{pos.X + fwdX * 1.75 + rgtX * 0.85, pos.Y + 0.40, pos.Z + fwdZ * 1.75 + rgtZ * 0.85}
 
             // BÊN TRÁI: Quét cả vuông góc ngang (-rgt) lẫn chéo trước-trái (30°) để bắt tường khi lao xiên
             physics.SingleRaycast(flWheelOrigin, Vector3{-rgtX, 0.0, -rgtZ}, WheelScrapeRayDist, nil, false,
                 out var scrpLftEnt, out var scrpLftPos, out var scrpLftDist, out var scrpLftNorm)
-            var isLftSideHit = KartGroundProbe.IsValidHit(scrpLftEnt, KartModel as entity<Rigidbody>) && scrpLftDist > 0.01 && scrpLftNorm.Y < 0.80
+            var isLftSideHit = KartGroundProbe.IsValidHit(scrpLftEnt, KartModel as entity<Rigidbody>) && scrpLftDist > 0.01 && scrpLftNorm.Y < 0.25
 
             physics.SingleRaycast(flWheelOrigin, Vector3{-rgtX * 0.866 + fwdX * 0.5, 0.0, -rgtZ * 0.866 + fwdZ * 0.5}, WheelScrapeRayDist, nil, false,
                 out var scrpLftDiagEnt, out var scrpLftDiagPos, out var scrpLftDiagDist, out var scrpLftDiagNorm)
-            var isLftDiagHit = KartGroundProbe.IsValidHit(scrpLftDiagEnt, KartModel as entity<Rigidbody>) && scrpLftDiagDist > 0.01 && scrpLftDiagNorm.Y < 0.80
+            var isLftDiagHit = KartGroundProbe.IsValidHit(scrpLftDiagEnt, KartModel as entity<Rigidbody>) && scrpLftDiagDist > 0.01 && scrpLftDiagNorm.Y < 0.25
 
             // Giới hạn góc cạ tường bên trái: nhận diện cạ lướt và đâm chéo (từ góc rất nông tới 75°)
             if isLftSideHit {
@@ -3881,11 +3986,11 @@ graph RacingMovement {
             // BÊN PHẢI: Quét cả vuông góc ngang (rgt) lẫn chéo trước-phải (30°) để bắt tường khi lao xiên
             physics.SingleRaycast(frWheelOrigin, Vector3{rgtX, 0.0, rgtZ}, WheelScrapeRayDist, nil, false,
                 out var scrpRgtEnt, out var scrpRgtPos, out var scrpRgtDist, out var scrpRgtNorm)
-            var isRgtSideHit = KartGroundProbe.IsValidHit(scrpRgtEnt, KartModel as entity<Rigidbody>) && scrpRgtDist > 0.01 && scrpRgtNorm.Y < 0.80
+            var isRgtSideHit = KartGroundProbe.IsValidHit(scrpRgtEnt, KartModel as entity<Rigidbody>) && scrpRgtDist > 0.01 && scrpRgtNorm.Y < 0.25
 
             physics.SingleRaycast(frWheelOrigin, Vector3{rgtX * 0.866 + fwdX * 0.5, 0.0, rgtZ * 0.866 + fwdZ * 0.5}, WheelScrapeRayDist, nil, false,
                 out var scrpRgtDiagEnt, out var scrpRgtDiagPos, out var scrpRgtDiagDist, out var scrpRgtDiagNorm)
-            var isRgtDiagHit = KartGroundProbe.IsValidHit(scrpRgtDiagEnt, KartModel as entity<Rigidbody>) && scrpRgtDiagDist > 0.01 && scrpRgtDiagNorm.Y < 0.80
+            var isRgtDiagHit = KartGroundProbe.IsValidHit(scrpRgtDiagEnt, KartModel as entity<Rigidbody>) && scrpRgtDiagDist > 0.01 && scrpRgtDiagNorm.Y < 0.25
 
             // Giới hạn góc cạ tường bên phải: nhận diện cạ lướt và đâm chéo (từ góc rất nông tới 75°)
             if isRgtSideHit {
@@ -3916,7 +4021,7 @@ graph RacingMovement {
             IsScrapingLeft = isScrpLft
             IsScrapingRight = isScrpRgt
             IsScrapingWall = isScrpLft || isScrpRgt
-            if IsScrapingWall && vel.Y > 0.0 {
+            if IsScrapingWall && vel.Y > 0.0 && !IsStableGrounded {
                 vel.Y = 0.0
                 if KartModel != nil { KartModel<Rigidbody>.Velocity = vel }
             }
@@ -3984,13 +4089,13 @@ graph RacingMovement {
 
             var ccdProbeDist = KartCCD.CalcCcdProbeDist(vel.X, vel.Y, vel.Z, dt, 2.5, CcdSafetyMultiplier)
 
-            physics.SingleRaycast(Vector3{pos.X, pos.Y, pos.Z}, Vector3{fwdVecFlat.X, fwdVecFlat.Y, fwdVecFlat.Z}, ccdProbeDist, nil, false, out var fwdEnt, out var fwdPos, out var fwdDist, out var fwdNorm)
+            physics.SingleRaycast(Vector3{pos.X, pos.Y + 0.35, pos.Z}, Vector3{fwdVecFlat.X, fwdVecFlat.Y, fwdVecFlat.Z}, ccdProbeDist, nil, false, out var fwdEnt, out var fwdPos, out var fwdDist, out var fwdNorm)
             var fwdHit = KartGroundProbe.IsValidHit(fwdEnt, KartModel as entity<Rigidbody>)
 
             var hFwdX = fwdX; var hFwdZ = fwdZ   
             var hFwdLen = KartGroundProbe.CalcHorizontalForwardLength(hFwdX, hFwdZ)
             hFwdX /= hFwdLen; hFwdZ /= hFwdLen
-            physics.SingleRaycast(Vector3{pos.X, pos.Y, pos.Z}, Vector3{hFwdX, 0.0, hFwdZ}, ccdProbeDist, nil, false, out var hFwdEnt, out var hFwdPos, out var hFwdDist, out var hFwdNorm)
+            physics.SingleRaycast(Vector3{pos.X, pos.Y + 0.35, pos.Z}, Vector3{hFwdX, 0.0, hFwdZ}, ccdProbeDist, nil, false, out var hFwdEnt, out var hFwdPos, out var hFwdDist, out var hFwdNorm)
             var hFwdHit = KartGroundProbe.IsValidHit(hFwdEnt, KartModel as entity<Rigidbody>)
 
             // Continuous collision detection sweep: raycast along actual frame displacement, not only car forward.
@@ -4006,7 +4111,11 @@ graph RacingMovement {
             var frHit = KartGroundProbe.IsValidHit(frEnt, KartModel as entity<Rigidbody>)
             var blHit = KartGroundProbe.IsValidHit(blEnt, KartModel as entity<Rigidbody>)
             var brHit = KartGroundProbe.IsValidHit(brEnt, KartModel as entity<Rigidbody>)
+            var cntHit = KartGroundProbe.IsValidHit(cntEnt, KartModel as entity<Rigidbody>) && cntNorm.Y > 0.35
             var hitCount = KartGroundingMath.CountWheelHits(flHit, frHit, blHit, brHit)
+            if hitCount == 0.0 && cntHit {
+                hitCount = 1.0
+            }
 
             var isStrictlyGrounded = hitCount > 0.0 
             // [DISABLED] Flat spin / drift-spin-in-air feature — tạm tắt
@@ -4080,41 +4189,25 @@ graph RacingMovement {
             wSum = KartGroundProbe.CalcWheelWeightAccum(wSum, brHit, 0.90)
 
             var wallThreshold = 0.7
-            var probeGroundThreshold = 0.35
-            var softWallThreshold = 0.18
+            var probeGroundThreshold = 0.55
+            var softWallThreshold = 0.35
 
-            if hitCount < 2.0 {
-                nx = KartGroundProbe.CalcProbeNormalAccum(nx, rightHit, rightDist, wallThreshold, rightNorm.X, rightNorm.Y, 0.35, softWallThreshold, probeGroundThreshold, 0.15)
-                ny = KartGroundProbe.CalcProbeNormalAccum(ny, rightHit, rightDist, wallThreshold, rightNorm.Y, rightNorm.Y, 0.35, softWallThreshold, probeGroundThreshold, 0.15)
-                nz = KartGroundProbe.CalcProbeNormalAccum(nz, rightHit, rightDist, wallThreshold, rightNorm.Z, rightNorm.Y, 0.35, softWallThreshold, probeGroundThreshold, 0.15)
-                wSum = KartGroundProbe.CalcProbeWeightAccum(wSum, rightHit, rightDist, wallThreshold, rightNorm.Y, 0.35, softWallThreshold, probeGroundThreshold, 0.15)
-
-                nx = KartGroundProbe.CalcProbeNormalAccum(nx, leftHit, leftDist, wallThreshold, leftNorm.X, leftNorm.Y, 0.35, softWallThreshold, probeGroundThreshold, 0.15)
-                ny = KartGroundProbe.CalcProbeNormalAccum(ny, leftHit, leftDist, wallThreshold, leftNorm.Y, leftNorm.Y, 0.35, softWallThreshold, probeGroundThreshold, 0.15)
-                nz = KartGroundProbe.CalcProbeNormalAccum(nz, leftHit, leftDist, wallThreshold, leftNorm.Z, leftNorm.Y, 0.35, softWallThreshold, probeGroundThreshold, 0.15)
-                wSum = KartGroundProbe.CalcProbeWeightAccum(wSum, leftHit, leftDist, wallThreshold, leftNorm.Y, 0.35, softWallThreshold, probeGroundThreshold, 0.15)
+            if slopeHit && slopeDist < 2.5 {
+                var slopeWeight = 1.0
+                if slopeNorm.Y < 0.96 { slopeWeight = 1.8 }
+                nx = KartGroundProbe.CalcWheelNormalAccum(nx, slopeHit, slopeNorm.X, slopeWeight)
+                ny = KartGroundProbe.CalcWheelNormalAccum(ny, slopeHit, slopeNorm.Y, slopeWeight)
+                nz = KartGroundProbe.CalcWheelNormalAccum(nz, slopeHit, slopeNorm.Z, slopeWeight)
+                wSum = KartGroundProbe.CalcWheelWeightAccum(wSum, slopeHit, slopeWeight)
             }
 
+            // Center downward probe only (never blend side/forward wall probes into ground normal -> prevents wall tilt/climb)
             nx = KartGroundProbe.CalcProbeNormalAccum(nx, upHit, upDist, wallThreshold, upNorm.X, upNorm.Y, 0.25, softWallThreshold, probeGroundThreshold, 0.10)
             ny = KartGroundProbe.CalcProbeNormalAccum(ny, upHit, upDist, wallThreshold, upNorm.Y, upNorm.Y, 0.25, softWallThreshold, probeGroundThreshold, 0.10)
             nz = KartGroundProbe.CalcProbeNormalAccum(nz, upHit, upDist, wallThreshold, upNorm.Z, upNorm.Y, 0.25, softWallThreshold, probeGroundThreshold, 0.10)
             wSum = KartGroundProbe.CalcProbeWeightAccum(wSum, upHit, upDist, wallThreshold, upNorm.Y, 0.25, softWallThreshold, probeGroundThreshold, 0.10)
 
             SurfaceTransitionTimer = KartGroundProbe.CalcSurfaceTransitionTimerNext(SurfaceTransitionTimer, dt, hitCount)
-            if hitCount < 2.0 && SurfaceTransitionTimer > 0.08 {
-                var fwdProbeW = 0.22
-                if fwdHit && fwdDist < 2.5 {
-                    nx = KartGroundProbe.CalcProbeNormalAccum(nx, fwdHit, fwdDist, 2.5, fwdNorm.X, fwdNorm.Y, fwdProbeW, softWallThreshold, probeGroundThreshold, 0.10)
-                    ny = KartGroundProbe.CalcProbeNormalAccum(ny, fwdHit, fwdDist, 2.5, fwdNorm.Y, fwdNorm.Y, fwdProbeW, softWallThreshold, probeGroundThreshold, 0.10)
-                    nz = KartGroundProbe.CalcProbeNormalAccum(nz, fwdHit, fwdDist, 2.5, fwdNorm.Z, fwdNorm.Y, fwdProbeW, softWallThreshold, probeGroundThreshold, 0.10)
-                    wSum = KartGroundProbe.CalcProbeWeightAccum(wSum, fwdHit, fwdDist, 2.5, fwdNorm.Y, fwdProbeW, softWallThreshold, probeGroundThreshold, 0.10)
-                } else if hFwdHit && hFwdDist < 2.5 {
-                    nx = KartGroundProbe.CalcProbeNormalAccum(nx, hFwdHit, hFwdDist, 2.5, hFwdNorm.X, hFwdNorm.Y, fwdProbeW, softWallThreshold, probeGroundThreshold, 0.10)
-                    ny = KartGroundProbe.CalcProbeNormalAccum(ny, hFwdHit, hFwdDist, 2.5, hFwdNorm.Y, hFwdNorm.Y, fwdProbeW, softWallThreshold, probeGroundThreshold, 0.10)
-                    nz = KartGroundProbe.CalcProbeNormalAccum(nz, hFwdHit, hFwdDist, 2.5, hFwdNorm.Z, hFwdNorm.Y, fwdProbeW, softWallThreshold, probeGroundThreshold, 0.10)
-                    wSum = KartGroundProbe.CalcProbeWeightAccum(wSum, hFwdHit, hFwdDist, 2.5, hFwdNorm.Y, fwdProbeW, softWallThreshold, probeGroundThreshold, 0.10)
-                }
-            }
 
             nx = KartGroundProbe.CalcNormalizedAccumValue(nx, wSum, 0.0)
             ny = KartGroundProbe.CalcNormalizedAccumValue(ny, wSum, 1.0)
@@ -4123,11 +4216,13 @@ graph RacingMovement {
             var normalizedNormal = KartGroundProbe.NormalizeNormal(nx, ny, nz)
             nx = normalizedNormal.X; ny = normalizedNormal.Y; nz = normalizedNormal.Z
 
-            var sideHit = KartGroundProbe.IsSideHit(rightHit, leftHit, upHit, fwdHit, hFwdHit, hitCount)
-            var raycastHit = hitCount > 0.0 || sideHit
+            var raycastHit = hitCount > 0.0 || (upHit && upNorm.Y > 0.55)
             IsStableGrounded = KartGroundingMath.CalcStableGrounded(hitCount, raycastHit, vel.Y)
 
             var targetNormal = KartGroundProbe.CalcTargetNormal(hitCount, nx, ny, nz)
+            if hitCount >= 3.0 && (flHit || frHit) && (blHit || brHit) {
+                targetNormal = KartGroundProbe.CalcWheelsPlaneNormal(flPos, frPos, blPos, brPos, flHit, frHit, blHit, brHit, targetNormal)
+            }
 
             LastValidNormal = KartGroundProbe.BlendNormal(LastValidNormal, targetNormal, dt)
 
@@ -4144,26 +4239,45 @@ graph RacingMovement {
             var suspSum = 0.0
             var suspWSum = 0.0
 
+            var probeRestLength = probeHeight + SuspRestLength
+
+            var hitDistSum = 0.0
+            var validHits = 0.0
+            if flHit { hitDistSum += flDist; validHits += 1.0 }
+            if frHit { hitDistSum += frDist; validHits += 1.0 }
+            if blHit { hitDistSum += blDist; validHits += 1.0 }
+            if brHit { hitDistSum += brDist; validHits += 1.0 }
+            var curGroundDist = probeRestLength
+            if validHits > 0.0 { curGroundDist = hitDistSum / validHits }
+            Frame_DistDelta = probeRestLength - curGroundDist
+
             // NOTE: No nested funcs allowed; compute per-wheel inline.
-            SuspFL = KartGroundingMath.CalcSuspensionCompression(flHit, flNorm.Y, SuspHitMinNy, SuspRestLength, flDist)
+            SuspFL = KartGroundingMath.CalcSuspensionCompression(flHit, flNorm.Y, SuspHitMinNy, probeRestLength, flDist)
             if SuspFL > 0.0 {
                 suspSum += SuspFL * 1.00
                 suspWSum += 1.00
             }
-            SuspFR = KartGroundingMath.CalcSuspensionCompression(frHit, frNorm.Y, SuspHitMinNy, SuspRestLength, frDist)
+            SuspFR = KartGroundingMath.CalcSuspensionCompression(frHit, frNorm.Y, SuspHitMinNy, probeRestLength, frDist)
             if SuspFR > 0.0 {
                 suspSum += SuspFR * 1.00
                 suspWSum += 1.00
             }
-            SuspBL = KartGroundingMath.CalcSuspensionCompression(blHit, blNorm.Y, SuspHitMinNy, SuspRestLength, blDist)
+            SuspBL = KartGroundingMath.CalcSuspensionCompression(blHit, blNorm.Y, SuspHitMinNy, probeRestLength, blDist)
             if SuspBL > 0.0 {
                 suspSum += SuspBL * 0.92
                 suspWSum += 0.92
             }
-            SuspBR = KartGroundingMath.CalcSuspensionCompression(brHit, brNorm.Y, SuspHitMinNy, SuspRestLength, brDist)
+            SuspBR = KartGroundingMath.CalcSuspensionCompression(brHit, brNorm.Y, SuspHitMinNy, probeRestLength, brDist)
             if SuspBR > 0.0 {
                 suspSum += SuspBR * 0.92
                 suspWSum += 0.92
+            }
+            if cntHit && hitCount <= 1.0 {
+                var suspCnt = KartGroundingMath.CalcSuspensionCompression(cntHit, cntNorm.Y, SuspHitMinNy, probeRestLength, cntDist)
+                if suspCnt > 0.0 {
+                    suspSum += suspCnt * 1.5
+                    suspWSum += 1.5
+                }
             }
 
             var suspAvg = 0.0
@@ -4186,18 +4300,14 @@ graph RacingMovement {
             var scrapeAngleDeg = 0.0
 
             var frontHitDistLimit = 1.05
-            var speedAhead = (CurrentSpeedKmh / 36.0) * dt * 1.8
-            if speedAhead > 0.0 { frontHitDistLimit += speedAhead }
-            if frontHitDistLimit > 2.5 { frontHitDistLimit = 2.5 }
-            if frontHitDistLimit < 1.05 { frontHitDistLimit = 1.05 }
 
             if hFwdHit && hFwdDist < frontHitDistLimit {
                 frontWallDot = hFwdX * hFwdNorm.X + hFwdZ * hFwdNorm.Z
                 crashNormX = hFwdNorm.X
                 crashNormZ = hFwdNorm.Z
-                if frontWallDot < -0.94 {
+                if frontWallDot < -0.75 && hFwdNorm.Y < 0.25 {
                     frontCrashHit = true
-                } else if frontWallDot < -0.02 {
+                } else if frontWallDot < -0.02 && hFwdNorm.Y < 0.40 {
                     sideScrapeHit = true
                     IsScrapingWall = true
                     ScrapeHitNorm = Vector3{crashNormX, 0.0, crashNormZ}
@@ -4208,9 +4318,9 @@ graph RacingMovement {
                 frontWallDot = fwdVecFlat.X * fwdNorm.X + fwdVecFlat.Z * fwdNorm.Z
                 crashNormX = fwdNorm.X
                 crashNormZ = fwdNorm.Z
-                if frontWallDot < -0.94 {
+                if frontWallDot < -0.75 && fwdNorm.Y < 0.25 {
                     frontCrashHit = true
-                } else if frontWallDot < -0.02 {
+                } else if frontWallDot < -0.02 && fwdNorm.Y < 0.40 {
                     sideScrapeHit = true
                     IsScrapingWall = true
                     ScrapeHitNorm = Vector3{crashNormX, 0.0, crashNormZ}
@@ -4564,7 +4674,7 @@ graph RacingMovement {
             if CurrentSpeedKmh > driftChargeSpeedKmh { driftChargeSpeedKmh = CurrentSpeedKmh }
             isDriftTurning = isDriftTurningRaw && (driftChargeSpeedKmh >= 25.0) && (DriftTimer >= 0.15)
 
-            if !IsBraking && PrevIsBraking {
+            if PrevIsDrift && !isDrift {
                 PostDriftBoostTimer = PostDriftNitroBoostTime
                 NitroPostCutCooldown = 0.25
                 if DriftTimer >= 0.25 {
@@ -4750,7 +4860,12 @@ graph RacingMovement {
 
                 // BẺ HƯỚNG TỪ TỪ KHI CẠ HÔNG HOẶC ĐÂM CHÉO VÀO TƯỜNG (intoWall > 0.005)
                 var intoWall = -(curFwd.X * wallScrapeNx + curFwd.Z * wallScrapeNz)
-                var isQualifySideScrape = CurrentSpeedKmh > 15.0 && !IsReversing && intoWall > 0.005
+                var isSteeringAway = KartSteeringRuntime.IsSteeringAwayFromWall(rgtVecFlat.X, rgtVecFlat.Z, wallScrapeNx, wallScrapeNz, turnInput)
+                if isSteeringAway {
+                    vel.X += wallScrapeNx * WallUnstickPush * dt
+                    vel.Z += wallScrapeNz * WallUnstickPush * dt
+                }
+                var isQualifySideScrape = CurrentSpeedKmh > 15.0 && !IsReversing && intoWall > 0.005 && !isSteeringAway
                 if isQualifySideScrape {
                     // Vector tiếp tuyến tường cùng chiều tiến của xe
                     var tanX = -wallScrapeNz
@@ -4767,38 +4882,42 @@ graph RacingMovement {
                     while yawDiff > 180.0 { yawDiff -= 360.0 }
                     while yawDiff < -180.0 { yawDiff += 360.0 }
 
-                    // Nếu người chơi đang ấn giữ nút cua đâm ngược vào tường (turnRate ngược dấu yawDiff),
-                    // triệt tiêu phần góc xoay đâm vào tường của frame này để mũi xe không bị ghìm kẹt vào tường
-                    if turnRate * yawDiff < 0.0 {
-                        curYaw -= turnRate * dt
-                        yawDiff = wallYaw - curYaw
-                        while yawDiff > 180.0 { yawDiff -= 360.0 }
-                        while yawDiff < -180.0 { yawDiff += 360.0 }
+                    // Chỉ bẻ lái hỗ trợ khi cạ lướt hoặc đâm góc chéo (yawDiff <= 70°).
+                    // Nếu đâm góc vuông/đối đầu (yawDiff > 70°), không bẻ lái để người chơi tự do điều khiển!
+                    if math.Abs(yawDiff) <= 70.0 {
+                        // Nếu người chơi đang ấn giữ nút cua đâm ngược vào tường (turnRate ngược dấu yawDiff),
+                        // triệt tiêu phần góc xoay đâm vào tường của frame này để mũi xe không bị ghìm kẹt vào tường
+                        if turnRate * yawDiff < 0.0 {
+                            curYaw -= turnRate * dt
+                            yawDiff = wallYaw - curYaw
+                            while yawDiff > 180.0 { yawDiff -= 360.0 }
+                            while yawDiff < -180.0 { yawDiff += 360.0 }
+                        }
+
+                        // Bẻ lái dứt khoát và mượt mà theo tiếp tuyến (cả khi góc cạ nông lẫn góc đâm xiên 30°-68°)
+                        var intoFactor = intoWall * 2.2
+                        if intoFactor > 1.0 { intoFactor = 1.0 }
+                        if intoFactor < 0.35 { intoFactor = 0.35 }
+
+                        var speedScale = CurrentSpeedKmh / 90.0
+                        if speedScale < 0.9 { speedScale = 0.9 }
+                        if speedScale > 2.2 { speedScale = 2.2 }
+
+                        var alignStep = dt * 9.0 * intoFactor * speedScale
+                        if alignStep > 0.26 { alignStep = 0.26 }
+
+                        var deltaYaw = yawDiff * alignStep
+                        var minStepDeg = dt * 85.0 * intoFactor * speedScale
+                        if math.Abs(yawDiff) > minStepDeg && math.Abs(deltaYaw) < minStepDeg {
+                            if yawDiff > 0.0 { deltaYaw = minStepDeg } else { deltaYaw = -minStepDeg }
+                        }
+
+                        var newYaw = curYaw + deltaYaw
+                        physEuler.Y = newYaw
+                        PhysicsQuat = math.EulerAngleToQuaternion(Vector3{physEuler.X, newYaw, physEuler.Z})
+                        FacingAngle = KartSteeringRuntime.NormalizeFacingAngle(newYaw)
+                        VelocityQuat = math.SlerpQuaternion(VelocityQuat, PhysicsQuat, dt * 18.0)
                     }
-
-                    // Bẻ lái dứt khoát và mượt mà theo tiếp tuyến (cả khi góc cạ nông lẫn góc đâm xiên 30°-68°)
-                    var intoFactor = intoWall * 2.2
-                    if intoFactor > 1.0 { intoFactor = 1.0 }
-                    if intoFactor < 0.35 { intoFactor = 0.35 }
-
-                    var speedScale = CurrentSpeedKmh / 90.0
-                    if speedScale < 0.9 { speedScale = 0.9 }
-                    if speedScale > 2.2 { speedScale = 2.2 }
-
-                    var alignStep = dt * 9.0 * intoFactor * speedScale
-                    if alignStep > 0.26 { alignStep = 0.26 }
-
-                    var deltaYaw = yawDiff * alignStep
-                    var minStepDeg = dt * 85.0 * intoFactor * speedScale
-                    if math.Abs(yawDiff) > minStepDeg && math.Abs(deltaYaw) < minStepDeg {
-                        if yawDiff > 0.0 { deltaYaw = minStepDeg } else { deltaYaw = -minStepDeg }
-                    }
-
-                    var newYaw = curYaw + deltaYaw
-                    physEuler.Y = newYaw
-                    PhysicsQuat = math.EulerAngleToQuaternion(Vector3{physEuler.X, newYaw, physEuler.Z})
-                    FacingAngle = KartSteeringRuntime.NormalizeFacingAngle(newYaw)
-                    VelocityQuat = math.SlerpQuaternion(VelocityQuat, PhysicsQuat, dt * 18.0)
 
                     // In log theo dõi bẻ hướng độc lập
                     if WallDeflectLogTimer <= 0.0 {
@@ -4835,18 +4954,18 @@ graph RacingMovement {
             UIKartPos = KartModel<Transform>.Position
 
             var curFwdSpd = DriveForwardSpeed
-            // Senior Game Physics: Khi vừa nhả nút Drift (IsBraking vừa chuyển từ true -> false)
-            if !IsBraking && PrevIsBraking {
+            // Asphalt 8 Physics: Khi vừa thoát khỏi trạng thái Drift (nhấn Nitro, counter-steer hoặc hết cua)
+            if PrevIsDrift && !isDrift {
                 // 1. Ép ngay vector vận tốc bám 100% theo hướng mũi xe mới
-                VelocityQuat = math.SlerpQuaternion(VelocityQuat, PhysicsQuat, 0.35)
-                // 2. Giữ lại một phần lateral momentum để exit drift có độ nảy
-                DriftSlipMemory = DriftSlipMemory * 0.35
+                VelocityQuat = math.SlerpQuaternion(VelocityQuat, PhysicsQuat, 0.45)
+                // 2. Giữ lại một phần lateral momentum để exit drift có độ nảy mượt mà
+                DriftSlipMemory = DriftSlipMemory * 0.25
                 DriftFlowTimer = 0.0
                 TractionRecoveryTimer = 0.0
-                // 3. Mini-Turbo theo cấp: giữ drift càng lâu thì thoát cua càng đã.
-                if DriftTimer >= 2.0 {
-                    curFwdSpd = curFwdSpd + (physTopSpeed * MiniTurboLongBoost)
-                } else if DriftTimer >= 1.2 {
+                // 3. Tăng tốc thoát cua: Thoát cua bằng Nitro (hoặc đạt ngưỡng drift) xe bắn vọt về phía trước
+                if IsBoosting {
+                    curFwdSpd = curFwdSpd + (physTopSpeed * 0.12)
+                } else if DriftTimer >= 1.5 {
                     curFwdSpd = curFwdSpd + (physTopSpeed * MiniTurboMediumBoost)
                 } else if DriftTimer >= 0.7 {
                     curFwdSpd = curFwdSpd + (physTopSpeed * MiniTurboShortBoost)
@@ -4948,6 +5067,13 @@ graph RacingMovement {
                 if isCrashing || Frame_IsCrashing { allowAccel = false }
                 if !IsBoosting && IsNitroRecovering && curFwdSpd > physTopSpeed { allowAccel = false }
                 if IsBraking && !DriftEntryDecelDone && curFwdSpd > driftSustainSpeed * 1.05 { allowAccel = false }
+
+                if IsBrakeBtnPressed && !isDriftActive && DriftBrakeTapTimer <= 0.0 {
+                    // Người chơi giữ nút Phanh/Drift khi đi thẳng -> Hãm phanh chủ động dừng xe
+                    curFwdSpd = KartPhysicsMath.LerpToSpeed(curFwdSpd, 0.0, BrakeLerpRate, dt)
+                    if curFwdSpd < 0.05 { curFwdSpd = 0.0 }
+                    allowAccel = false
+                }
 
                 if allowAccel {
                     if IsAiAutopilot && curFwdSpd > maxSpeed {
@@ -5102,6 +5228,24 @@ graph RacingMovement {
                 targetVelX = fwd3DX * curFwdSpd + rgt3DX * curLatSpd
                 targetVelY = fwd3DY * curFwdSpd + rgt3DY * curLatSpd
                 targetVelZ = fwd3DZ * curFwdSpd + rgt3DZ * curLatSpd
+
+                // CỐ ĐỊNH KHOẢNG CÁCH GẦM XE CÁCH ĐẤT (Hover Ride Height Lock):
+                // Bù trừ vận tốc dọc theo normal để xe luôn lơ lửng cách đất đúng 1 khoảng cách chuẩn!
+                var heightCorrectionRate = 15.0
+                var heightAssistSpeed = Frame_DistDelta * heightCorrectionRate
+                if heightAssistSpeed > 9.0 { heightAssistSpeed = 9.0 }
+                if heightAssistSpeed < -4.0 { heightAssistSpeed = -4.0 }
+
+                targetVelX += nx * heightAssistSpeed
+                targetVelY += ny * heightAssistSpeed
+                targetVelZ += nz * heightAssistSpeed
+
+                if Frame_DistDelta > 0.12 {
+                    // Xe bị lún sâu hơn 12cm -> can thiệp soft push để xe ngay lập tức nổi lên vị trí cố định
+                    var hardPush = (Frame_DistDelta - 0.12) * 0.50
+                    var curP = KartModel<Transform>.Position
+                    KartModel<Transform>.Position = Vector3{curP.X + nx * hardPush, curP.Y + ny * hardPush, curP.Z + nz * hardPush}
+                }
             } else {
                 targetVelX = fwdXFlat * curFwdSpd + rgtXFlat * curLatSpd
                 targetVelY = vel.Y
@@ -5164,6 +5308,14 @@ graph RacingMovement {
                 if isHeadCrash {
                     totalGroundForce += WallAntiClimbDownForce
                 }
+
+                // Nếu xe đang bị lún thấp hơn khoảng cách cố định chuẩn (Frame_DistDelta > 0.02m):
+                // Giảm bớt lực đè downforce để lò xo và hover velocity đẩy xe trở về đúng khoảng cách chuẩn
+                if Frame_DistDelta > 0.02 {
+                    var downforceScale = 1.0 - (Frame_DistDelta - 0.02) * 8.0
+                    if downforceScale < 0.0 { downforceScale = 0.0 }
+                    totalGroundForce = totalGroundForce * downforceScale
+                }
                 // ─────────────────────────────────────────────────────────────────
                 KartPhysics.ApplyGroundForce(KartModel as entity<Rigidbody>, nx, ny, nz, totalGroundForce)
             } else {
@@ -5205,11 +5357,14 @@ graph RacingMovement {
             // - Measures speed directly from Rigidbody velocity (MarioKart REALCURRENTSPEED style).
             // - LoadUI reads UISpeedKmh from this graph.
             // -------------------------------------------------
-            // Stable arcade source: DriveForwardSpeed is the gameplay authority.
-            // Rigidbody velocity remains physics-only and is not allowed to break
-            // Drift, Nitro, camera, audio, or the HUD when readback is delayed.
+            // Đồng hồ tốc độ: Sử dụng DriveForwardSpeed làm nguồn chuẩn arcade do engine Craftland
+            // không đồng bộ liên tục Rigidbody.Velocity về script client mỗi frame
             var driveKmh = KartSpeedometer.CalcDriveKmh(DriveForwardSpeed, SpeedUnitScale)
+            var realPhysSpeedKmh = KartSpeedometer.CalcGroundSpeedKmh(vel, Vector3{fwd3DX, fwd3DY, fwd3DZ}, SpeedUnitScale)
             var speedForDisplayKmh = driveKmh
+            if realPhysSpeedKmh > 1.0 {
+                speedForDisplayKmh = realPhysSpeedKmh
+            }
             if speedForDisplayKmh < 0.0 { speedForDisplayKmh = 0.0 }
             var virtualSpeedCap = BoostTopSpeed
             if virtualSpeedCap < TopSpeed { virtualSpeedCap = TopSpeed }
@@ -5227,8 +5382,7 @@ graph RacingMovement {
             SpeedDisplayTimer = KartSpeedometer.CalcSpeedDisplayTimerNext(SpeedDisplayTimer, dt)
             if KartSpeedometer.ShouldLogSpeed(SpeedDisplayTimer) {
                 SpeedDisplayTimer = KartSpeedometer.ResetSpeedDisplayTimer()
-                var wCount  = list.Length(WheelNodes as List<object>)
-                // LogInfo(KartSpeedometer.BuildTelemetryMessageFromState(CurrentSpeedKmh, CurrentRollAngle, wCount, isDriftTurning, isDrift, IsReversing, IsBoosting, NitroCharge, MaxNitroCharge))
+                LogInfo("[KART] Spd: " + convert.ToString(math.Round(CurrentSpeedKmh)) + " km/h (raw: " + convert.ToString(DriveForwardSpeed) + ") | hits: " + convert.ToString(hitCount) + " | gnd: " + convert.ToString(IsStableGrounded) + " | crash: " + convert.ToString(isCrashing))
             }
         }
 
@@ -5382,49 +5536,21 @@ graph RacingMovement {
             CameraModule_Airborne(dt, AirTime, StuntCamRoll)
             CameraModule_CinematicLag(dt, speedRatio, cameraBoostActive, AirTime, DriftBlend, NitroTimeActive)
 
-            // Dynamic Velocity-Scaled FOV (Asphalt 8 / AAA speed feel)
-            var dynFov = FovMin + (FovMax - FovMin) * speedRatio
-            if CurrentSpeedKmh > TopSpeed {
-                var overspeed = CurrentSpeedKmh - TopSpeed
-                if overspeed > 73.5 {
-                    // Dải 315 -> 367.5 km/h: từ 99° lên 108° (warp speed)
-                    dynFov = 99.0 + (overspeed - 73.5) * (9.0 / 52.5)
-                } else {
-                    // Dải 241.5 -> 315 km/h: từ 82° lên 99° (tạo cảm giác tăng tốc liên tục)
-                    dynFov = FovMax + overspeed * ((99.0 - FovMax) / 73.5)
-                }
-                if dynFov > 108.0 { dynFov = 108.0 }
-            }
+            // Anti-Fisheye Dynamic FOV (Asphalt Legends / Ace Racer formula: Base 60° -> Max 68° -> Nitro 76° Cap)
+            var baseSpeedFov = FovMin + (FovMax - FovMin) * speedRatio
+            if baseSpeedFov > FovMax { baseSpeedFov = FovMax }
 
-            var effectiveFovBoost = dynFov
-            if cameraBoostActive {
-                var tierMinFov = 78.0
+            var targetFOV = baseSpeedFov
+            if cameraBoostActive || NitroCamBlend > 0.01 || nitroKick > 0.01 {
+                var boostFovDelta = 4.0 * nitroFeel + 2.5 * nitroKick
                 if NitroBoostTier == 2 {
-                    tierMinFov = 90.0
-                } else if NitroBoostTier == 3 {
-                    tierMinFov = 98.0
-                }
-                if effectiveFovBoost < tierMinFov {
-                    effectiveFovBoost = tierMinFov
-                }
-            }   
-
-            var targetFOV = KartCameraMath.CalcFovTarget(speedRatio, isDriftActive, DriftBlend, cameraBoostActive, NitroTimeActive, ShakeTime, FovMin, FovMax, effectiveFovBoost, CamFovBreathAmp)
-            if NitroCamBlend > 0.01 || nitroKick > 0.01 {
-                var sustainFov = FovMin + (FovMax - FovMin) * speedRatio + 8.0 * nitroFeel
-                if NitroBoostTier == 2 {
-                    sustainFov += 4.0 * NitroCamBlend
+                    boostFovDelta += 1.5 * NitroCamBlend
                 } else if NitroBoostTier >= 3 {
-                    sustainFov += 8.0 * NitroCamBlend
+                    boostFovDelta += 2.5 * NitroCamBlend
                 }
-                var kickFov = 10.0 * nitroKick * nitroTierFeel
-                var nitroFovTarget = sustainFov + kickFov
-                if CurrentSpeedKmh > TopSpeed {
-                    nitroFovTarget += 4.0 * NitroCamBlend
-                }
-                if nitroFovTarget > 111.0 { nitroFovTarget = 111.0 }
-                if nitroFovTarget > targetFOV { targetFOV = nitroFovTarget }
+                targetFOV = baseSpeedFov + boostFovDelta
             }
+            if targetFOV > 76.0 { targetFOV = 76.0 }
             var camFovLerp = KartCameraMath.CalcFovLerpSpeed(cameraBoostActive)
             if NitroCamBlend > 0.01 || nitroKick > 0.01 {
                 camFovLerp = 2.8 + 6.5 * NitroCamBlend + 5.0 * nitroKick
@@ -5438,22 +5564,22 @@ graph RacingMovement {
 
             var shakeIntensity = KartCameraRuntime.CalcShakeIntensity(speedRatio, cameraBoostActive, isDriftActive, DriftBlend, ImpactTimer)
             if cameraBoostActive || CurrentSpeedKmh > TopSpeed {
-                var dynShake = 0.25
+                var dynShake = 0.18
                 if CurrentSpeedKmh > TopSpeed {
                     var overspeed = CurrentSpeedKmh - TopSpeed
                     if overspeed > 73.5 {
-                        dynShake = 0.36 + (overspeed - 73.5) * (0.08 / 52.5)
+                        dynShake = 0.24 + (overspeed - 73.5) * (0.08 / 52.5)
                     } else {
-                        dynShake = 0.16 + overspeed * (0.20 / 73.5)
+                        dynShake = 0.14 + overspeed * (0.10 / 73.5)
                     }
-                    if dynShake > 0.65 { dynShake = 0.65 }
+                    if dynShake > 0.35 { dynShake = 0.35 }
                 }
                 if cameraBoostActive {
-                    var tierMinShake = 0.16
+                    var tierMinShake = 0.14
                     if NitroBoostTier == 2 {
-                        tierMinShake = 0.22
+                        tierMinShake = 0.18
                     } else if NitroBoostTier == 3 {
-                        tierMinShake = 0.30
+                        tierMinShake = 0.22
                     }
                     if dynShake < tierMinShake { dynShake = tierMinShake }
                 }
@@ -5466,17 +5592,17 @@ graph RacingMovement {
             var finalShakeY = KartCameraRuntime.CalcShakeY(ShakeTime, shakeIntensity)
             var finalShakeZ = 0.0
             if shakeIntensity > 0.01 {
-                finalShakeZ = (math.Sin(ShakeTime * 88.0) * (shakeIntensity * 0.35)) as float
+                finalShakeZ = (math.Sin(ShakeTime * 71.0) * (shakeIntensity * 0.22)) as float
             }
             if NitroCamBlend > 0.01 || nitroKick > 0.01 {
-                var nitroRumble = nitroFeel * (0.65 + speedRatio * 0.35)
+                var nitroRumble = nitroFeel * (0.75 + speedRatio * 0.35)
                 if ImpactTimer > 0.0 || CrashCamSnapTimer > 0.0 {
                     nitroRumble = nitroRumble * 0.25
                 }
-                if nitroRumble > 1.15 { nitroRumble = 1.15 }
-                finalShakeX = finalShakeX + ((math.Sin(ShakeTime * 29.0) * 0.045 + math.Sin(ShakeTime * 61.0) * 0.020) * nitroRumble)
-                finalShakeY = finalShakeY + ((math.Sin(ShakeTime * 41.0) * 0.030 + math.Cos(ShakeTime * 83.0) * 0.014) * nitroRumble)
-                finalShakeZ = finalShakeZ + ((math.Sin(ShakeTime * 53.0) * 0.030 + nitroKick * 0.035) * nitroRumble)
+                if nitroRumble > 1.25 { nitroRumble = 1.25 }
+                finalShakeX = finalShakeX + ((math.Sin(ShakeTime * 47.0) * 0.08 + math.Sin(ShakeTime * 93.0) * 0.04) * nitroRumble + nitroKick * 0.14 * nitroTierFeel)
+                finalShakeY = finalShakeY + ((math.Cos(ShakeTime * 57.0) * 0.06 + math.Cos(ShakeTime * 103.0) * 0.03) * nitroRumble)
+                finalShakeZ = finalShakeZ + ((math.Sin(ShakeTime * 67.0) * 0.05 + nitroKick * 0.08) * nitroRumble)
             }
 
             var camRotSharp = KartCameraRuntime.CalcCamRotSharp(CamRotationSharp, CamCatchUpSharp, cameraBoostActive, 0.0, CamAngularVelocityCap)
@@ -5568,12 +5694,13 @@ graph RacingMovement {
                 if driftDir == 0.0 { driftDir = turnInputForCam }
                 if driftDir != 0.0 {
                     driftYawInwardTarget = -driftDir * CamDriftYawInwardMax * DriftBlend
-                    // Nghiêng camera rõ rệt theo góc điện ảnh (~10.5° - 15.0° theo vận tốc)
-                    driftRollTarget = -driftDir * (10.5 + DriftBlend * 2.5 + speedCamBonus * 2.0)
+                    // Nghiêng camera rõ rệt theo góc điện ảnh (~11.5° - 15.5° theo vận tốc) chuẩn Asphalt 8
+                    driftRollTarget = -driftDir * (11.5 + DriftBlend * 2.5 + speedCamBonus * 1.5)
                 }
             } else if turnInputForCam != 0.0 {
-                // Nghiêng camera khi cua thường (~4.5°)
-                driftRollTarget = -turnInputForCam * 4.5
+                // Nghiêng camera khi cua thường (Dutch Tilt chuẩn Asphalt 8: ~7.5° - 9.0° theo vận tốc)
+                var turnSpeedScale = 0.65 + speedRatio * 0.35
+                driftRollTarget = -turnInputForCam * 8.0 * turnSpeedScale
             }
             if NitroCamBlend > 0.01 {
                 var nitroDriftReadability = 1.0 - NitroCamBlend * 0.16
@@ -5594,12 +5721,12 @@ graph RacingMovement {
             CamDriftYawInward = CamDriftYawInward + (driftYawInwardTarget - CamDriftYawInward) * camDriftLerpT
 
             // Xử lý riêng tốc độ nghiêng camera (Roll): nhạy và dứt khoát khi bẻ lái/drift, êm ái khi trả lái
-            var rollLerp = 5.5
+            var rollLerp = 7.0
             if driftRollTarget == 0.0 {
-                rollLerp = 4.2
+                rollLerp = 4.5
             }
             var camDriftReversal = (driftRollTarget > 0.5 && CamDriftRoll < -0.5) || (driftRollTarget < -0.5 && CamDriftRoll > 0.5)
-            if camDriftReversal { rollLerp = 7.5 }
+            if camDriftReversal { rollLerp = 8.5 }
             var rollLerpT = 1.0 - math.Exponentiation(2.71828183, -(dt * rollLerp))
             CamDriftRoll = CamDriftRoll + (driftRollTarget - CamDriftRoll) * rollLerpT
             if math.Abs(CamDriftHeightDrop) < 0.005 { CamDriftHeightDrop = 0.0 }
@@ -5634,18 +5761,26 @@ graph RacingMovement {
             if math.Abs(CamNitroHeightDrop) < 0.005 { CamNitroHeightDrop = 0.0 }
             if math.Abs(CamNitroPitchUp) < 0.01 { CamNitroPitchUp = 0.0 }
 
-            var camBackZ = -5.2 - fovInertiaZ - CamLagBack - boostPull - nitroBackPull
-            if camBackZ > -5.35 { camBackZ = -5.35 }
-            var camBackMinZ = -5.85
+            var camBackZ = -6.60 - fovInertiaZ - CamLagBack - boostPull - nitroBackPull
+            if camBackZ > -6.60 { camBackZ = -6.60 }
+            var camBackMinZ = -7.25
             if NitroCamBlend > 0.01 || nitroKick > 0.01 || highSpeedFactor > 0.5 {
-                camBackMinZ = -5.90 - NitroCamBlend * 0.30 - nitroKick * 0.18 - highSpeedFactor * 0.30
-                if camBackMinZ < -6.30 { camBackMinZ = -6.30 }
+                camBackMinZ = -7.30 - NitroCamBlend * 0.35 - nitroKick * 0.20 - highSpeedFactor * 0.35
+                if camBackMinZ < -7.90 { camBackMinZ = -7.90 }
             }
             if camBackZ < camBackMinZ { camBackZ = camBackMinZ }
             if CrashCamSnapTimer > 0.0 {
                 CamBoostPullCurrent = 0.0
             }
 
+            var speedBobX = 0.0
+            var speedBobY = 0.0
+            var speedBobZ = 0.0
+            if shakeIntensity > 0.05 {
+                speedBobX = ((math.Sin(ShakeTime * 38.0) * 0.005 + math.Cos(ShakeTime * 67.0) * 0.003) * shakeIntensity) as float
+                speedBobY = ((math.Cos(ShakeTime * 41.0) * 0.006 + math.Sin(ShakeTime * 73.0) * 0.003) * shakeIntensity) as float
+                speedBobZ = ((math.Sin(ShakeTime * 35.0) * 0.008) * shakeIntensity) as float
+            }
             var nitroBobX = 0.0
             var nitroBobY = 0.0
             var nitroBobZ = 0.0
@@ -5654,12 +5789,17 @@ graph RacingMovement {
                 if ImpactTimer > 0.0 || CrashCamSnapTimer > 0.0 {
                     bobRumble = bobRumble * 0.25
                 }
-                if bobRumble > 1.18 { bobRumble = 1.18 }
-                nitroBobX = (math.Sin(ShakeTime * 35.0) * 0.0035 * bobRumble) as float
-                nitroBobY = ((math.Sin(ShakeTime * 25.0) * 0.026 + math.Sin(ShakeTime * 50.0) * 0.010 + math.Cos(ShakeTime * 71.0) * 0.004) * bobRumble - 0.035 * nitroKick) as float
-                nitroBobZ = ((math.Sin(ShakeTime * 32.0) * 0.024 + math.Cos(ShakeTime * 59.0) * 0.010) * bobRumble - 0.055 * nitroKick * nitroTierFeel) as float
+                if bobRumble > 1.25 { bobRumble = 1.25 }
+                nitroBobX = (math.Sin(ShakeTime * 43.0) * 0.006 * bobRumble) as float
+                nitroBobY = ((math.Sin(ShakeTime * 37.0) * 0.014 + math.Sin(ShakeTime * 71.0) * 0.006) * bobRumble - 0.025 * nitroKick) as float
+                nitroBobZ = ((math.Sin(ShakeTime * 41.0) * 0.016 + math.Cos(ShakeTime * 79.0) * 0.008) * bobRumble - 0.060 * nitroKick * nitroTierFeel) as float
             }
-            var localOffset = Vector3{CurrentCamOffset + CamDriftSide + CamDriftSlipYaw * 0.02 + nitroBobX, BaseCamHeight + CurrentDropOffset + CamDriftHeightDrop + CamNitroHeightDrop + nitroBobY, camBackZ + nitroBobZ}
+            var totalBobX = (speedBobX + nitroBobX) as float
+            var totalBobY = (speedBobY + nitroBobY) as float
+            var totalBobZ = (speedBobZ + nitroBobZ) as float
+            // Giữ xe nằm ngay chính giữa màn hình (triệt tiêu độ lệch trôi ngang dư thừa, chỉ giữ dao động điện ảnh nhẹ khi drift)
+            var camCenterSide = (CamDriftSide * 0.30 + totalBobX) as float
+            var localOffset = Vector3{camCenterSide, BaseCamHeight + CurrentDropOffset + CamDriftHeightDrop + CamNitroHeightDrop + totalBobY, camBackZ + totalBobZ}
             
             var rotatedOffset = math.RotateVector(localOffset, CamQuat)
             var lookAheadVec = math.RotateVector(Vector3{0.0, 0.0, CamLookAheadOffset}, CamQuat)
@@ -5670,111 +5810,33 @@ graph RacingMovement {
                 rawCarPos.Z + rotatedOffset.Z + lookAheadVec.Z}
 
             var camUp = math.RotateVector(Vector3{0.0, 1.0, 0.0}, CamQuat)
-            var camFocusPos = Vector3{rawCarPos.X + camUp.X * 0.65, rawCarPos.Y + camUp.Y * 0.65, rawCarPos.Z + camUp.Z * 0.65}
-
-            var camRayX = desiredCamPos.X - camFocusPos.X
-            var camRayY = desiredCamPos.Y - camFocusPos.Y
-            var camRayZ = desiredCamPos.Z - camFocusPos.Z
-            var camRayLen = math.Sqrt(camRayX * camRayX + camRayY * camRayY + camRayZ * camRayZ) as float
             CurrentCamPos = desiredCamPos
-            if camRayLen > 0.10 {
-                var camDir = Vector3{camRayX / camRayLen, camRayY / camRayLen, camRayZ / camRayLen}
-                var camRgt = math.RotateVector(Vector3{1.0, 0.0, 0.0}, CamQuat)
-
-                var minFraction = 1.0
-                var hasHit = false
-                var bestNorm = Vector3{0.0, 0.0, 0.0}
-
-                // 1. Center ray
-                physics.SingleRaycast(camFocusPos, camDir, camRayLen, nil, false, out var cEnt, out var cPos, out var cDist, out var cNorm)
-                if KartGroundProbe.IsValidHit(cEnt, KartModel as entity<Rigidbody>) {
-                    var safeDistC = cDist - CamCollisionBuffer
-                    if safeDistC < CamCollisionMinDist { safeDistC = CamCollisionMinDist }
-                    var fracC = (safeDistC / camRayLen) as float
-                    if fracC < minFraction {
-                        minFraction = fracC
-                        bestNorm = cNorm
-                        hasHit = true
-                    }
-                }
-
-                // 2. Left probe (camera frustum left edge)
-                var tgtLft = Vector3{desiredCamPos.X - camRgt.X * 0.45, desiredCamPos.Y - camRgt.Y * 0.45, desiredCamPos.Z - camRgt.Z * 0.45}
-                var lRayX = tgtLft.X - camFocusPos.X
-                var lRayY = tgtLft.Y - camFocusPos.Y
-                var lRayZ = tgtLft.Z - camFocusPos.Z
-                var lRayLen = math.Sqrt(lRayX * lRayX + lRayY * lRayY + lRayZ * lRayZ) as float
-                if lRayLen > 0.10 {
-                    var lDir = Vector3{lRayX / lRayLen, lRayY / lRayLen, lRayZ / lRayLen}
-                    physics.SingleRaycast(camFocusPos, lDir, lRayLen, nil, false, out var lEnt, out var lPos, out var lDist, out var lNorm)
-                    if KartGroundProbe.IsValidHit(lEnt, KartModel as entity<Rigidbody>) {
-                        var safeDistL = lDist - CamCollisionBuffer
-                        if safeDistL < CamCollisionMinDist { safeDistL = CamCollisionMinDist }
-                        var fracL = (safeDistL / lRayLen) as float
-                        if fracL < minFraction {
-                            minFraction = fracL
-                            bestNorm = lNorm
-                            hasHit = true
-                        }
-                    }
-                }
-
-                // 3. Right probe (camera frustum right edge)
-                var tgtRgt = Vector3{desiredCamPos.X + camRgt.X * 0.45, desiredCamPos.Y + camRgt.Y * 0.45, desiredCamPos.Z + camRgt.Z * 0.45}
-                var rRayX = tgtRgt.X - camFocusPos.X
-                var rRayY = tgtRgt.Y - camFocusPos.Y
-                var rRayZ = tgtRgt.Z - camFocusPos.Z
-                var rRayLen = math.Sqrt(rRayX * rRayX + rRayY * rRayY + rRayZ * rRayZ) as float
-                if rRayLen > 0.10 {
-                    var rDir = Vector3{rRayX / rRayLen, rRayY / rRayLen, rRayZ / rRayLen}
-                    physics.SingleRaycast(camFocusPos, rDir, rRayLen, nil, false, out var rEnt, out var rPos, out var rDist, out var rNorm)
-                    if KartGroundProbe.IsValidHit(rEnt, KartModel as entity<Rigidbody>) {
-                        var safeDistR = rDist - CamCollisionBuffer
-                        if safeDistR < CamCollisionMinDist { safeDistR = CamCollisionMinDist }
-                        var fracR = (safeDistR / rRayLen) as float
-                        if fracR < minFraction {
-                            minFraction = fracR
-                            bestNorm = rNorm
-                            hasHit = true
-                        }
-                    }
-                }
-
-                if hasHit {
-                    if minFraction < 0.0 { minFraction = 0.0 }
-                    if minFraction > 1.0 { minFraction = 1.0 }
-                    var finalSafeDist = (camRayLen * minFraction) as float
-                    if finalSafeDist < CamCollisionMinDist { finalSafeDist = CamCollisionMinDist }
-                    if finalSafeDist > camRayLen { finalSafeDist = camRayLen }
-
-                    var safePos = Vector3{
-                        camFocusPos.X + camDir.X * finalSafeDist,
-                        camFocusPos.Y + camDir.Y * finalSafeDist,
-                        camFocusPos.Z + camDir.Z * finalSafeDist}
-
-                    var pushNx = bestNorm.X * 0.20
-                    var pushNy = bestNorm.Y * 0.20
-                    if bestNorm.Y > 0.60 {
-                        pushNy = 0.0
-                    }
-                    var pushNz = bestNorm.Z * 0.20
-
-                    CurrentCamPos = Vector3{
-                        safePos.X + pushNx,
-                        safePos.Y + pushNy,
-                        safePos.Z + pushNz}
-                }
-            }
 
             var camEntity = MyClientCam as entity<Entity>
 
-            var composedQ = KartCameraRuntime.ComposeCameraRotation(CamQuat, CamDriftRoll, StuntCamRoll, CamAirRoll, CamDriftSlipYaw, CamVelocityYaw, CamAirPitch, ShakeTime, shakeIntensity)
+            // Dual-Pivot Target Node: Ngắm vào trọng tâm thân xe/nắp capo để nâng xe lên giữa màn hình
+            var camFwd = math.RotateVector(Vector3{0.0, 0.0, 1.0}, CamQuat)
+            var tX = rawCarPos.X + camFwd.X * (4.5 + CamLookAheadOffset) + camUp.X * 0.65
+            var tY = rawCarPos.Y + camFwd.Y * (4.5 + CamLookAheadOffset) + camUp.Y * 0.65
+            var tZ = rawCarPos.Z + camFwd.Z * (4.5 + CamLookAheadOffset) + camUp.Z * 0.65
+            var lookAtTarget = Vector3{tX, tY, tZ}
 
-            var finalCamEuler = math.QuaternionToEulerAngle(composedQ)
-            var targetCamEuler = Vector3{
-                finalCamEuler.X + finalShakeX + BaseCamPitch + CamDriftPitchUp + CamNitroPitchUp,
-                finalCamEuler.Y + finalShakeY + CamDriftYawInward,
-                finalCamEuler.Z + finalShakeZ}
+            var aimX = lookAtTarget.X - CurrentCamPos.X
+            var aimY = lookAtTarget.Y - CurrentCamPos.Y
+            var aimZ = lookAtTarget.Z - CurrentCamPos.Z
+            var aimLen = math.Sqrt(aimX * aimX + aimY * aimY + aimZ * aimZ) as float
+            if aimLen < 0.10 { aimLen = 0.10 }
+            var aimDir = Vector3{aimX / aimLen, aimY / aimLen, aimZ / aimLen}
+
+            var lookQ = math.LookRotation(aimDir, camUp)
+            var lookEuler = math.QuaternionToEulerAngle(lookQ)
+
+            var totalRollDeg = CamDriftRoll + StuntCamRoll + CamAirRoll
+            // Cộng thêm BaseCamPitch vào góc chúc để nâng xe rời khỏi mép đáy, định vị hoàn hảo ở trung tâm màn hình
+            var eX = lookEuler.X + BaseCamPitch + finalShakeX
+            var eY = lookEuler.Y + finalShakeY + CamDriftYawInward
+            var eZ = lookEuler.Z + totalRollDeg + finalShakeZ
+            var targetCamEuler = Vector3{eX, eY, eZ}
 
             if IsIntroBlendingToCar {
                 IntroBlendTimer += dt
@@ -5802,6 +5864,34 @@ graph RacingMovement {
             } else {
                 camEntity<Transform>.Position = CurrentCamPos
                 camEntity<Transform>.Rotation = targetCamEuler
+            }
+
+            // --- NATIVE ENGINE CAMERA SHAKE (Asphalt 8 Feel: Trực tiếp qua GPU Renderer, không bị Engine lerp lọc mất) ---
+            if SpeedRumbleTimer > 0.0 {
+                SpeedRumbleTimer -= dt
+                if SpeedRumbleTimer < 0.0 { SpeedRumbleTimer = 0.0 }
+            }
+            if SpeedRumbleTimer <= 0.0 && !isMovementLocked {
+                if cameraBoostActive {
+                    SpeedRumbleTimer = 0.22
+                    var nitroAmp = 0.12
+                    if NitroBoostTier == 2 {
+                        nitroAmp = 0.15
+                    } else if NitroBoostTier >= 3 {
+                        nitroAmp = 0.18
+                    }
+                    camera.PlayCustomCameraShake(Vector3{0.015, 0.030, 0.020}, nitroAmp, 28.0, 20, 80, 250)
+                } else if CurrentSpeedKmh > 180.0 {
+                    SpeedRumbleTimer = 0.24
+                    var speedRatioOver = (CurrentSpeedKmh - 180.0) / (TopSpeed - 180.0)
+                    if speedRatioOver > 1.35 { speedRatioOver = 1.35 }
+                    var speedAmp = 0.06 + speedRatioOver * 0.06
+                    camera.PlayCustomCameraShake(Vector3{0.010, 0.018, 0.012}, speedAmp, 24.0, 20, 80, 250)
+                } else if isDriftActive && DriftBlend > 0.3 {
+                    SpeedRumbleTimer = 0.20
+                    var driftAmp = 0.08 * DriftBlend
+                    camera.PlayCustomCameraShake(Vector3{0.015, 0.012, 0.012}, driftAmp, 26.0, 20, 70, 230)
+                }
             }
         }
 

@@ -1,0 +1,147 @@
+import "Math.fcc" as math
+import "Physics.fcc" as physics
+import "StdLibrary.fcc" as std
+
+// ============================================================================
+// VEHICLE CHASSIS — ASPHALT 8 ARCHITECTURE (CRAFTLAND ENGINE)
+// Hệ thống gầm 4 tia Raycast Struts & Bám dốc địa hình
+// Platform: Client Only (Static Helper)
+// ============================================================================
+
+[platform_client]
+static graph VehicleChassis {
+
+    // ------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
+    // CẬP NHẬT GẦM XE (4 RAYCAST STRUTS TẦM XA 8.0M & PHÁP TUYẾN MẶT ĐƯỜNG)
+    // ------------------------------------------------------------------------
+    func UpdateChassisAtPos(box entity<Entity>, checkPos Vector3, yaw float, targetRideHeight float, out var isGrounded bool, out var targetGroundY float, out var groundNormal Vector3) {
+        isGrounded = false
+        targetGroundY = 0.0
+        groundNormal = Vector3{0.0, 1.0, 0.0}
+        if box == nil { return }
+
+        // Đảm bảo cấu hình Rigidbody Kinematic (Chuẩn Arcade Asphalt 8: triệt tiêu 100% lực đẩy nảy của Engine)
+        if box<Rigidbody>.Type != physics.RigidbodyType.Kinematic {
+            box<Rigidbody>.Type = physics.RigidbodyType.Kinematic
+        }
+        if box<Rigidbody>.Constrain != 112 {
+            box<Rigidbody>.Constrain = 112
+        }
+        if box<Rigidbody>.UseGravity {
+            box<Rigidbody>.UseGravity = false
+        }
+        physics.Wakeup(box as entity<Rigidbody>)
+
+        var cosYaw = math.Cos(yaw)
+        var sinYaw = math.Sin(yaw)
+
+        // Hướng Forward & Right
+        var fwdX = sinYaw
+        var fwdZ = cosYaw
+        var rgtX = cosYaw
+        var rgtZ = -sinYaw
+
+        // Kích thước chuẩn Box Chassis: Dài 4.0m, Rộng 2.0m
+        var wheelFwd = 1.40
+        var wheelHalfW = 0.80
+        var rayOriginH = 2.50
+        var rayLen = 14.0
+        var startY = checkPos.Y + rayOriginH
+        var rayDir = Vector3{0.0, -1.0, 0.0}
+
+        // Tọa độ 4 tia raycast ở 4 góc bánh xe
+        var flStart = Vector3{checkPos.X + (fwdX * wheelFwd) - (rgtX * wheelHalfW), startY, checkPos.Z + (fwdZ * wheelFwd) - (rgtZ * wheelHalfW)}
+        var frStart = Vector3{checkPos.X + (fwdX * wheelFwd) + (rgtX * wheelHalfW), startY, checkPos.Z + (fwdZ * wheelFwd) + (rgtZ * wheelHalfW)}
+        var blStart = Vector3{checkPos.X - (fwdX * wheelFwd) - (rgtX * wheelHalfW), startY, checkPos.Z - (fwdZ * wheelFwd) - (rgtZ * wheelHalfW)}
+        var brStart = Vector3{checkPos.X - (fwdX * wheelFwd) + (rgtX * wheelHalfW), startY, checkPos.Z - (fwdZ * wheelFwd) + (rgtZ * wheelHalfW)}
+
+        // 1. Quét ưu tiên tuyệt đối Layer 1 (Road) — hoàn toàn mù với tường/nước/vật cản Layer 0
+        var roadMask = List<int>{1}
+
+        physics.SingleRaycast(flStart, rayDir, rayLen, roadMask, false, out var flEnt, out var flPos, out var flDist, out var flNorm)
+        physics.SingleRaycast(frStart, rayDir, rayLen, roadMask, false, out var frEnt, out var frPos, out var frDist, out var frNorm)
+        physics.SingleRaycast(blStart, rayDir, rayLen, roadMask, false, out var blEnt, out var blPos, out var blDist, out var blNorm)
+        physics.SingleRaycast(brStart, rayDir, rayLen, roadMask, false, out var brEnt, out var brPos, out var brDist, out var brNorm)
+
+        var totalHits = 0
+        var sumGroundY = 0.0
+        var sumNorm = Vector3{0.0, 0.0, 0.0}
+
+        if flEnt != nil && flEnt != box {
+            totalHits = totalHits + 1
+            sumGroundY = sumGroundY + (startY - flDist)
+            sumNorm = Vector3{sumNorm.X + flNorm.X, sumNorm.Y + flNorm.Y, sumNorm.Z + flNorm.Z}
+        }
+        if frEnt != nil && frEnt != box {
+            totalHits = totalHits + 1
+            sumGroundY = sumGroundY + (startY - frDist)
+            sumNorm = Vector3{sumNorm.X + frNorm.X, sumNorm.Y + frNorm.Y, sumNorm.Z + frNorm.Z}
+        }
+        if blEnt != nil && blEnt != box {
+            totalHits = totalHits + 1
+            sumGroundY = sumGroundY + (startY - blDist)
+            sumNorm = Vector3{sumNorm.X + blNorm.X, sumNorm.Y + blNorm.Y, sumNorm.Z + blNorm.Z}
+        }
+        if brEnt != nil && brEnt != box {
+            totalHits = totalHits + 1
+            sumGroundY = sumGroundY + (startY - brDist)
+            sumNorm = Vector3{sumNorm.X + brNorm.X, sumNorm.Y + brNorm.Y, sumNorm.Z + brNorm.Z}
+        }
+
+        // 2. Fallback: Nếu không chạm Layer 1 (xe chạy ra lề cỏ/địa hình Layer 0): chỉ bắt bề mặt phẳng norm.Y >= 0.70
+        if totalHits == 0 {
+            var terrainMask = List<int>{0}
+            physics.SingleRaycast(flStart, rayDir, rayLen, terrainMask, false, out var tflEnt, out var tflPos, out var tflDist, out var tflNorm)
+            physics.SingleRaycast(frStart, rayDir, rayLen, terrainMask, false, out var tfrEnt, out var tfrPos, out var tfrDist, out var tfrNorm)
+            physics.SingleRaycast(blStart, rayDir, rayLen, terrainMask, false, out var tblEnt, out var tblPos, out var tblDist, out var tblNorm)
+            physics.SingleRaycast(brStart, rayDir, rayLen, terrainMask, false, out var tbrEnt, out var tbrPos, out var tbrDist, out var tbrNorm)
+
+            if tflEnt != nil && tflEnt != box && tflNorm.Y >= 0.70 {
+                totalHits = totalHits + 1
+                sumGroundY = sumGroundY + (startY - tflDist)
+                sumNorm = Vector3{sumNorm.X + tflNorm.X, sumNorm.Y + tflNorm.Y, sumNorm.Z + tflNorm.Z}
+            }
+            if tfrEnt != nil && tfrEnt != box && tfrNorm.Y >= 0.70 {
+                totalHits = totalHits + 1
+                sumGroundY = sumGroundY + (startY - tfrDist)
+                sumNorm = Vector3{sumNorm.X + tfrNorm.X, sumNorm.Y + tfrNorm.Y, sumNorm.Z + tfrNorm.Z}
+            }
+            if tblEnt != nil && tblEnt != box && tblNorm.Y >= 0.70 {
+                totalHits = totalHits + 1
+                sumGroundY = sumGroundY + (startY - tblDist)
+                sumNorm = Vector3{sumNorm.X + tblNorm.X, sumNorm.Y + tblNorm.Y, sumNorm.Z + tblNorm.Z}
+            }
+            if tbrEnt != nil && tbrEnt != box && tbrNorm.Y >= 0.70 {
+                totalHits = totalHits + 1
+                sumGroundY = sumGroundY + (startY - tbrDist)
+                sumNorm = Vector3{sumNorm.X + tbrNorm.X, sumNorm.Y + tbrNorm.Y, sumNorm.Z + tbrNorm.Z}
+            }
+        }
+
+        if totalHits > 0 {
+            isGrounded = true
+            var invHits = 1.0 / (totalHits as float)
+            var avgGroundY = sumGroundY * invHits
+            targetGroundY = avgGroundY + targetRideHeight
+
+            // Chuẩn hóa pháp tuyến
+            var rawNorm = Vector3{sumNorm.X * invHits, sumNorm.Y * invHits, sumNorm.Z * invHits}
+            var nLen = math.Sqrt(rawNorm.X * rawNorm.X + rawNorm.Y * rawNorm.Y + rawNorm.Z * rawNorm.Z)
+            if nLen > 0.001 {
+                groundNormal = Vector3{rawNorm.X / nLen, rawNorm.Y / nLen, rawNorm.Z / nLen}
+            }
+        }
+    }
+
+    func UpdateChassis(box entity<Entity>, dt float, targetRideHeight float, out var isGrounded bool, out var targetGroundY float, out var groundNormal Vector3) {
+        isGrounded = false
+        targetGroundY = 0.0
+        groundNormal = Vector3{0.0, 1.0, 0.0}
+        if box == nil { return }
+        UpdateChassisAtPos(box, box<Transform>.Position, box<Transform>.Rotation.Y, targetRideHeight, out var g, out var ty, out var norm)
+        isGrounded = g
+        targetGroundY = ty
+        groundNormal = norm
+    }
+}

@@ -14,6 +14,7 @@ import "Convert.fcc" as convert
 import "List.fcc" as list
 import "Time.fcc" as time
 import "./Kart/KartCarFactory.fcg" as KartCarFactory
+import "./Main_Script/VehicleController.fcg" as vc
 
 [platform_client]
 graph LoadUI {
@@ -169,51 +170,43 @@ graph LoadUI {
 
         if p != std.GetLocalPlayer() { return }
 
-        // Khởi tạo UI ControlUI ở Client (cho Tốc độ, Nitro, Minimap, Lap, Position, 60fps mượt mà)
-        hud.CreateCustomUIClient(out var ui, EditorGenLib.EResUI.ControlUI)
-        MyControlUI = ui
+        // Lấy hoặc khởi tạo duy nhất 1 bản Custom UI ControlUI ở Client
+        if (thisEntity<vc> as entity) != nil && (thisEntity<vc>.ControlUIEntity as entity) != nil {
+            MyControlUI = thisEntity<vc>.ControlUIEntity
+        } else {
+            hud.CreateCustomUIClient(out var ui, EditorGenLib.EResUI.ControlUI)
+            MyControlUI = ui
+            if (thisEntity<vc> as entity) != nil {
+                thisEntity<vc>.ControlUIEntity = ui
+            }
+        }
         if (MyControlUI as entity) == nil { return }
         
         // Lấy tham chiếu các Widget
         CurrentSpeedKmhText = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/txt_Speed")
-        LapText = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap")
+        LapText = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/txt_Lap")
+        if (LapText as entity) == nil {
+            LapText = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap")
+        }
 
-        // Lấy tham chiếu ảnh số vòng đua (Lap 1, Lap 2, Lap 3)
+        // Tắt ảnh số vòng đua cũ (Lap 1, 2, 3 cũ) để tránh đè lên giao diện
         Lap1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/CurrentLap/1")
-        if (Lap1Image as entity) == nil { Lap1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/CurrentLap/1") }
-        if (Lap1Image as entity) == nil { Lap1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/1") }
-        if (Lap1Image as entity) == nil { Lap1Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/1") }
-
+        if (Lap1Image as entity) != nil { Lap1Image<hud.UIWidget>.IsVisible = false }
         Lap2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/CurrentLap/2")
-        if (Lap2Image as entity) == nil { Lap2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/CurrentLap/2") }
-        if (Lap2Image as entity) == nil { Lap2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/2") }
-        if (Lap2Image as entity) == nil { Lap2Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/2") }
-
+        if (Lap2Image as entity) != nil { Lap2Image<hud.UIWidget>.IsVisible = false }
         Lap3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/CurrentLap/3")
-        if (Lap3Image as entity) == nil { Lap3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/CurrentLap/3") }
-        if (Lap3Image as entity) == nil { Lap3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap/3") }
-        if (Lap3Image as entity) == nil { Lap3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap/3") }
+        if (Lap3Image as entity) != nil { Lap3Image<hud.UIWidget>.IsVisible = false }
 
-        if (Lap1Image as entity) != nil {
-            Lap1Image<hud.UIWidget>.IsVisible = true
-            Lap1Image<hud.UIWidget>.AnchorPosition = Vector3{Lap1Image<hud.UIWidget>.AnchorPosition.X, -50.0, 0.0}
-        }
-        if (Lap2Image as entity) != nil {
-            Lap2Image<hud.UIWidget>.IsVisible = true
-            Lap2Image<hud.UIWidget>.AnchorPosition = Vector3{Lap2Image<hud.UIWidget>.AnchorPosition.X, -100.0, 0.0}
-        }
-        if (Lap3Image as entity) != nil {
-            Lap3Image<hud.UIWidget>.IsVisible = true
-            Lap3Image<hud.UIWidget>.AnchorPosition = Vector3{Lap3Image<hud.UIWidget>.AnchorPosition.X, -150.0, 0.0}
-        }
+        var oldLapFolder = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/Lap")
+        if (oldLapFolder as entity) != nil { oldLapFolder<hud.UIWidget>.IsVisible = false }
 
+        // Tắt widget debug TestLap1Widget (không in UID người chơi ra giữa màn hình)
         TestLap1Widget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap (1)")
         if (TestLap1Widget as entity) == nil {
             TestLap1Widget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/lap(1)")
         }
         if (TestLap1Widget as entity) != nil {
-            TestLap1Widget<hud.UIWidget>.IsVisible = true
-            TestLap1Widget<UIWidgetLabel>.Content = p<Player>.UserUID
+            TestLap1Widget<hud.UIWidget>.IsVisible = false
         }
         PositionText = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/txt_Position")
         
@@ -245,7 +238,7 @@ graph LoadUI {
             LobbyTimerWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/txt_LobbyTimer")
         }
         if (LobbyTimerWidget as entity) != nil {
-            LobbyTimerWidget<hud.UIWidget>.IsVisible = true
+            LobbyTimerWidget<hud.UIWidget>.IsVisible = false
         }
 
         // Widget viền đen điện ảnh Letterbox (Top & Bottom)
@@ -344,7 +337,7 @@ graph LoadUI {
             startContainer = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/start")
         }
         if (startContainer as entity) != nil {
-            startContainer<hud.UIWidget>.IsVisible = true
+            startContainer<hud.UIWidget>.IsVisible = false
         }
 
         Count3Image = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/Start/3")
@@ -406,8 +399,11 @@ graph LoadUI {
             SpeedNeedle = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/SpeedNeedle")
         }
         if (SpeedNeedle as entity) != nil {
-            SpeedNeedle<hud.UIWidget>.IsVisible = true
-            SpeedNeedle<hud.UIWidget>.Angle = 120.0
+            SpeedNeedle<hud.UIWidget>.IsVisible = false
+        }
+        var speedGauge = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/SpeedGauge")
+        if (speedGauge as entity) != nil {
+            speedGauge<hud.UIWidget>.IsVisible = false
         }
         DirectionArrow = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot/DirectionArrow")
         if (DirectionArrow as entity) != nil {
@@ -433,12 +429,12 @@ graph LoadUI {
             PlayerDot<hud.UIWidget>.IsVisible = false
         }
 
-        // Khởi tạo DriveUIRoot ở tọa độ cực lớn ngoài màn hình (9999, 9999) khi vào trận
+        // Đặt DriveUIRoot tại tâm (0, 0, 0) hiển thị đầy đủ nút lái và HUD
         DriveUIRootWidget = hud.GetWidgetByPath(p as PlayerOrSpectator, MyControlUI, "/DriveUIRoot")
         if (DriveUIRootWidget as entity) != nil {
             DriveUIRootWidget<hud.UIWidget>.IsVisible = true
-            DriveUIRootWidget<hud.UIWidget>.AnchorPosition = Vector3{9999.0, 9999.0, 0.0}
-            DriveUIShown = false
+            DriveUIRootWidget<hud.UIWidget>.AnchorPosition = Vector3{0.0, 0.0, 0.0}
+            DriveUIShown = true
         }
 
         // Ẩn ranking bên trong ControlUI (vì Profile đã do Server hiển thị qua RankingUI)
@@ -812,15 +808,10 @@ graph LoadUI {
             }
         }
 
-        // Teleport DriveUIRoot về (0, 0, 0) CHỈ KHI GO! XUẤT HIỆN hoặc đang đua.
-        // Còn lúc phòng chờ, lúc đang đếm 3-2-1, hoặc sau khi cán đích 1s thì tele ra ngoài màn hình (9999, 9999, 0)
-        var shouldShowDriveUI = (isGo || isStarted) && !finishHideUi && !isLobby
+        // Luôn giữ DriveUIRoot tại tâm (0, 0, 0) để người chơi có đầy đủ nút lái và HUD
         if (DriveUIRootWidget as entity) != nil {
-            if shouldShowDriveUI {
-                DriveUIRootWidget<hud.UIWidget>.AnchorPosition = Vector3{0.0, 0.0, 0.0}
-            } else {
-                DriveUIRootWidget<hud.UIWidget>.AnchorPosition = Vector3{9999.0, 9999.0, 0.0}
-            }
+            DriveUIRootWidget<hud.UIWidget>.IsVisible = true
+            DriveUIRootWidget<hud.UIWidget>.AnchorPosition = Vector3{0.0, 0.0, 0.0}
         }
 
         // Countdown 3-2-1-GO (Hỗ trợ cả 4 ảnh Image hoặc Text Label)
@@ -890,6 +881,7 @@ graph LoadUI {
                 }
             } else {
                 // Ẩn tất cả khi vào trận
+                if (StartWidget as entity) != nil { StartWidget<hud.UIWidget>.IsVisible = false }
                 if (Count3Image as entity) != nil { Count3Image<hud.UIWidget>.IsVisible = false }
                 if (Count2Image as entity) != nil { Count2Image<hud.UIWidget>.IsVisible = false }
                 if (Count1Image as entity) != nil { Count1Image<hud.UIWidget>.IsVisible = false }
@@ -1020,40 +1012,22 @@ graph LoadUI {
         if lapLerp > 1.0 { lapLerp = 1.0 }
 
         if (Lap1Image as entity) != nil {
-            var d1 = tgtY1 - Lap1CurrentY
-            if math.Abs(d1) > 0.01 {
-                Lap1CurrentY += d1 * lapLerp
-                var x1 = Lap1Image<hud.UIWidget>.AnchorPosition.X
-                Lap1Image<hud.UIWidget>.AnchorPosition = Vector3{x1, Lap1CurrentY, 0.0}
-            }
-            Lap1Image<hud.UIWidget>.IsVisible = true
+            Lap1Image<hud.UIWidget>.IsVisible = false
         }
 
         if (Lap2Image as entity) != nil {
-            var d2 = tgtY2 - Lap2CurrentY
-            if math.Abs(d2) > 0.01 {
-                Lap2CurrentY += d2 * lapLerp
-                var x2 = Lap2Image<hud.UIWidget>.AnchorPosition.X
-                Lap2Image<hud.UIWidget>.AnchorPosition = Vector3{x2, Lap2CurrentY, 0.0}
-            }
-            Lap2Image<hud.UIWidget>.IsVisible = true
+            Lap2Image<hud.UIWidget>.IsVisible = false
         }
 
         if (Lap3Image as entity) != nil {
-            var d3 = tgtY3 - Lap3CurrentY
-            if math.Abs(d3) > 0.01 {
-                Lap3CurrentY += d3 * lapLerp
-                var x3 = Lap3Image<hud.UIWidget>.AnchorPosition.X
-                Lap3Image<hud.UIWidget>.AnchorPosition = Vector3{x3, Lap3CurrentY, 0.0}
-            }
-            Lap3Image<hud.UIWidget>.IsVisible = true
+            Lap3Image<hud.UIWidget>.IsVisible = false
         }
 
         if (NitroBar as entity) != nil {
-            var maxNitro = thisEntity<rm>.MaxNitroCharge
+            var maxNitro = thisEntity<vc>.MaxNitro
             var targetFill = 0.0
             if maxNitro > 0.0 {
-                targetFill = thisEntity<rm>.NitroCharge / maxNitro
+                targetFill = thisEntity<vc>.CurrentNitro / maxNitro
             }
             if targetFill < 0.0 { targetFill = 0.0 }
             if targetFill > 1.0 { targetFill = 1.0 }
@@ -1062,78 +1036,20 @@ graph LoadUI {
             NitroBarFillAmount += (targetFill - NitroBarFillAmount) * 0.22
             NitroBarColorProgress += (targetFill - NitroBarColorProgress) * 0.075
             NitroBar<UIWidgetImage>.FillAmount = NitroBarFillAmount
-
-            var colorPos = NitroBarColorProgress
-            var r = 40.0
-            var g = 155.0
-            var b = 255.0
-
-            if colorPos < 0.45 {
-                r = 40.0; g = 155.0; b = 255.0
-            } else if colorPos < 0.55 {
-                var blend = (colorPos - 0.45) / 0.10
-                r = 40.0 + (255.0 - 40.0) * blend
-                g = 155.0 + (220.0 - 155.0) * blend
-                b = 255.0 + (35.0 - 255.0) * blend
-            } else if colorPos < 0.75 {
-                r = 255.0; g = 220.0; b = 35.0
-            } else if colorPos < 0.85 {
-                var blend2 = (colorPos - 0.75) / 0.10
-                r = 255.0 + (180.0 - 255.0) * blend2
-                g = 220.0 + (70.0 - 220.0) * blend2
-                b = 35.0 + (255.0 - 35.0) * blend2
-            } else {
-                r = 180.0; g = 70.0; b = 255.0
-            }
-
             NitroBar<UIWidgetImage>.Color = std.ColorRGB(255, 255, 255)
-            if (NitroGlowHead as entity) != nil {
-                if !HasCachedNitroBarPos {
-                    NitroBarStartPos = NitroBar<hud.UIWidget>.AnchorPosition
-                    var sz = NitroBar<hud.UIWidget>.SizeDelta
-                    NitroBarTotalWidth = sz.X
-                    if NitroBarTotalWidth <= 0.0 { NitroBarTotalWidth = 260.0 }
-                    HasCachedNitroBarPos = true
-                }
-                if NitroBarFillAmount > 0.01 {
-                    NitroGlowHead<hud.UIWidget>.IsVisible = true
-                    var currentHeadX = NitroBarStartPos.X + (NitroBarTotalWidth * NitroBarFillAmount)
-                    NitroGlowHead<hud.UIWidget>.AnchorPosition = Vector3{currentHeadX, NitroBarStartPos.Y, NitroBarStartPos.Z}
-                    NitroGlowHead<UIWidgetImage>.Color = std.ColorRGB(math.Floor(r) as int, math.Floor(g) as int, math.Floor(b) as int)
-                    NitroGlowHead<UIWidgetImage>.Alpha = 1.0
-                } else {
-                    NitroGlowHead<hud.UIWidget>.IsVisible = false
-                }
-            }
             if targetFill >= 0.98 {
                 NitroBar<UIWidgetImage>.Alpha = 1.0
             } else {
-                NitroBar<UIWidgetImage>.Alpha = 0.78
+                NitroBar<UIWidgetImage>.Alpha = 0.90
             }
         }
 
-        // Đồng hồ tốc độ bán nguyệt: xoay kim mượt mỗi frame theo dải 0 -> 300 km/h + rung lắc kịch kim
-        if (SpeedNeedle as entity) != nil {
-            var currentSpeed = thisEntity<rm>.UISpeedKmh
-            if currentSpeed < 0.0 { currentSpeed = 0.0 }
-            var maxGaugeSpeed = 300.0
-            var speedRatio = currentSpeed / maxGaugeSpeed
-            if speedRatio > 1.0 { speedRatio = 1.0 }
-            
-            // 0 km/h = 120 độ (dưới trái), 150 km/h ≈ 0 độ, 300 km/h = -122 độ / 238 độ (dưới phải)
-            var targetAngle = 120.0 - (speedRatio * 242.0)
-            SpeedNeedleAngle += (targetAngle - SpeedNeedleAngle) * 0.25
-            
-            // Rung nhẹ khi kịch kim: chỉ bắt đầu từ 300 km/h, dao động nhỏ quanh mốc 300
-            var finalAngle = SpeedNeedleAngle
-            if currentSpeed >= 300.0 {
-                NeedleShakeTime += 0.4
-                if NeedleShakeTime > 6.28 { NeedleShakeTime -= 6.28 }
-                var shakeOffset = math.Sin(NeedleShakeTime * 6.0) * 2.2
-                finalAngle = -124.0 + shakeOffset
-            }
-            
-            SpeedNeedle<hud.UIWidget>.Angle = finalAngle
+        // Cập nhật Tốc độ xe mỗi frame (60 FPS mượt mà chuẩn Asphalt 8 Digital Speedometer)
+        if (CurrentSpeedKmhText as entity) != nil {
+            var carSpeed = thisEntity<vc>.CurrentSpeedKmh
+            if carSpeed < 0.0 { carSpeed = -carSpeed }
+            var uiSpeedKmh = math.Floor(carSpeed) as int
+            CurrentSpeedKmhText<UIWidgetLabel>.Content = convert.ToString(uiSpeedKmh) + " KM/H"
         }
 
         UpdateCounter += 1
@@ -1150,46 +1066,37 @@ graph LoadUI {
             }
 
             if (LobbyTimerWidget as entity) != nil {
-                if isLobby {
-                    LobbyTimerWidget<hud.UIWidget>.IsVisible = true
-                    LobbyTimerWidget<UIWidgetLabel>.Content = lobbyStr
-                } else {
-                    LobbyTimerWidget<hud.UIWidget>.IsVisible = false
-                }
-            } else if (StartWidget as entity) != nil {
-                if isLobby {
-                    StartWidget<hud.UIWidget>.IsVisible = true
-                    StartWidget<UIWidgetLabel>.Content = lobbyStr
-                    StartWidget<UIWidgetLabel>.FontSize = 38
-                }
+                LobbyTimerWidget<hud.UIWidget>.IsVisible = false
+            }
+            if (StartWidget as entity) != nil && !isCountingDown && !isGo {
+                StartWidget<hud.UIWidget>.IsVisible = false
             }
 
-            // Cập nhật Tốc độ
-            if (CurrentSpeedKmhText as entity) != nil {
-                LastSpeedKmh = thisEntity<rm>.UISpeedKmh
-                var uiSpeedKmh = math.Floor(LastSpeedKmh + 0.5) as float
-                CurrentSpeedKmhText<UIWidgetLabel>.Content = convert.NumToString(uiSpeedKmh, "0") + " KM/H"
-            } 
-
-            // Cập nhật Text Vòng đua
+            // Cập nhật Text Vòng đua (LAP 1/3)
             curLap = thisEntity<rm>.CpCurrentLap
+            if curLap <= 0 { curLap = 1 }
+            var totalLaps = thisEntity<rm>.CpTotalLaps
+            if totalLaps <= 0 { totalLaps = 3 }
 
             if (LapText as entity) != nil {
-                var lapStr = "LAP " + convert.NumToString(curLap as float, "0") + "/" + convert.NumToString(thisEntity<rm>.CpTotalLaps as float, "0")
+                var lapStr = "LAP " + convert.ToString(curLap) + "/" + convert.ToString(totalLaps)
                 LapText<UIWidgetLabel>.Content = lapStr
             }
             if (TestLap1Widget as entity) != nil {
-                TestLap1Widget<hud.UIWidget>.IsVisible = true
-                var pLocal = thisEntity as entity<Player>
-                if pLocal != nil {
-                    TestLap1Widget<UIWidgetLabel>.Content = pLocal<Player>.UserUID
-                }
+                TestLap1Widget<hud.UIWidget>.IsVisible = false
             }
 
-            // Cập nhật Thứ hạng
+            // Cập nhật Thứ hạng chuẩn Asphalt 8 (1/5 hoặc 1/N người chơi)
             if (PositionText as entity) != nil {
-                var posStr = KartCheckpoint.BuildPositionText(thisEntity<rm>.CpPosition, thisEntity<rm>.CpIsRaceFinished)
-                PositionText<UIWidgetLabel>.Content = posStr
+                if thisEntity<rm>.CpIsRaceFinished {
+                    PositionText<UIWidgetLabel>.Content = "FINISH"
+                } else {
+                    var curPos = thisEntity<rm>.CpPosition
+                    if curPos <= 0 { curPos = 1 }
+                    var totalP = thisEntity<rm>.CpTotalPlayers
+                    if totalP <= 0 { totalP = 5 }
+                    PositionText<UIWidgetLabel>.Content = convert.ToString(curPos) + "/" + convert.ToString(totalP)
+                }
             }
             
             // Hiển widget Finish khi hoàn thành

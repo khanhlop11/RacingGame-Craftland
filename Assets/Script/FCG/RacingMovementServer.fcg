@@ -92,34 +92,24 @@ graph RacingMovementServer {
         var senderPlayer = thisEntity as entity<Player>
         if senderPlayer == nil { return }
 
-        var senderUid = senderPlayer<Player>.UserUID
-        if senderUid == "" { return }
+        var senderUid = ""
+        if senderPlayer<Player>.UserUID != nil {
+            senderUid = senderPlayer<Player>.UserUID as string
+        }
 
         var allPlayers = std.GetAllPlayers()
         var pCount = list.Length(allPlayers as List<object>)
-        if pCount <= 1 { return }
+        if pCount <= 0 { return }
 
-        // Cố định slot sender (gán 1 lần duy nhất cho mỗi player, không bao giờ thay đổi)
-        if MySlot < 0 {
-            for checkSlot = 0, 8, 1 {
-                var slotTaken = false
-                for pI = 0, pCount, 1 {
-                    var otherP = allPlayers[pI] as entity<Player>
-                    if otherP != nil && otherP != senderPlayer {
-                        if otherP<RacingMovementServer>.MySlot == checkSlot {
-                            slotTaken = true
-                            break
-                        }
-                    }
-                }
-                if !slotTaken {
-                    MySlot = checkSlot
-                    break
-                }
+        // Xác định slot từ thứ tự của người chơi trong danh sách Server (0..4)
+        var senderSlot = 0
+        for sI = 0, pCount, 1 {
+            if allPlayers[sI] == senderPlayer {
+                senderSlot = sI
+                break
             }
         }
-        var senderSlot = MySlot
-        if senderSlot < 0 || senderSlot >= 8 { return }
+        if senderSlot >= 8 { senderSlot = 7 }
 
         var carIdx = ReceivedCarIndex
         if carIdx <= 0 { carIdx = 1 }
@@ -127,12 +117,13 @@ graph RacingMovementServer {
         var driftInt = 0
         if isDrifting > 0.5 { driftInt = 1 }
 
-        // Relay cho TẤT CẢ người chơi khác — loại trừ bản thân
+        // Relay tọa độ và trạng thái xe cho TẤT CẢ người chơi khác trong phòng
         for rI = 0, pCount, 1 {
             var pTarget = allPlayers[rI] as entity<Player>
             if pTarget == nil { continue }
             if pTarget == senderPlayer { continue }
-            if senderUid != "" && pTarget<Player>.UserUID == senderUid { continue }
+            // pTarget == senderPlayer đã loại trừ chính mình chuẩn xác 100%
+
             std.DispatchEventToEntity(SyncOpponentClient, pTarget, PlatformType.Client, List<object>{senderSlot as object, carIdx as object, posX as object, posY as object, posZ as object, yaw as object, velX as object, velZ as object, driftInt as object, senderUid as object})
         }
     }

@@ -54,9 +54,10 @@ static graph KartGroundingMath {
     func CalcSuspensionCompression(hit bool, normalY float, minNormalY float, restLength float, hitDist float) float {
         if !hit { return 0.0 as float }
         if normalY < minNormalY { return 0.0 as float }
-        var comp = (restLength - hitDist) / restLength
+        var travel = 0.90
+        var comp = (restLength - hitDist) / travel
         if comp < 0.0 { comp = 0.0 }
-        if comp > 1.0 { comp = 1.0 }
+        if comp > 1.2 { comp = 1.2 }
         return comp as float
     }
 
@@ -64,7 +65,8 @@ static graph KartGroundingMath {
         var springF = suspAvg * spring
         var dampF = (-surfaceVelocity) * damping
         var suspForce = springF + dampF
-        if suspForce < 0.0 { suspForce = 0.0 }
+        var minReboundForce = -35.0
+        if suspForce < minReboundForce { suspForce = minReboundForce }
         if suspForce > maxForce { suspForce = maxForce }
         return suspForce as float
     }

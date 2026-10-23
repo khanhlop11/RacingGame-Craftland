@@ -106,4 +106,41 @@ static graph KartGroundProbe {
     func ShouldCancelBoostOnCrash(absDot float, isBoosting bool) bool {
         return (absDot > 0.6 && isBoosting) as bool
     }
+
+    func CalcWheelsPlaneNormal(flPos Vector3, frPos Vector3, blPos Vector3, brPos Vector3, flHit bool, frHit bool, blHit bool, brHit bool, fallbackNormal Vector3) Vector3 {
+        var pFL = flPos; var pFR = frPos; var pBL = blPos; var pBR = brPos
+        if !flHit && frHit && blHit && brHit { pFL = Vector3{blPos.X + (frPos.X - brPos.X), blPos.Y + (frPos.Y - brPos.Y), blPos.Z + (frPos.Z - brPos.Z)} }
+        if !frHit && flHit && blHit && brHit { pFR = Vector3{brPos.X + (flPos.X - blPos.X), brPos.Y + (flPos.Y - blPos.Y), brPos.Z + (flPos.Z - blPos.Z)} }
+        if !blHit && flHit && frHit && brHit { pBL = Vector3{flPos.X - (frPos.X - brPos.X), flPos.Y - (frPos.Y - brPos.Y), flPos.Z - (frPos.Z - brPos.Z)} }
+        if !brHit && flHit && frHit && blHit { pBR = Vector3{frPos.X - (flPos.X - blPos.X), frPos.Y - (flPos.Y - blPos.Y), frPos.Z - (flPos.Z - blPos.Z)} }
+
+        var fFrontX = (pFL.X + pFR.X) * 0.5
+        var fFrontY = (pFL.Y + pFR.Y) * 0.5
+        var fFrontZ = (pFL.Z + pFR.Z) * 0.5
+
+        var fBackX = (pBL.X + pBR.X) * 0.5
+        var fBackY = (pBL.Y + pBR.Y) * 0.5
+        var fBackZ = (pBL.Z + pBR.Z) * 0.5
+
+        var fwdX = fFrontX - fBackX
+        var fwdY = fFrontY - fBackY
+        var fwdZ = fFrontZ - fBackZ
+
+        var rgtX = ((pFR.X + pBR.X) - (pFL.X + pBL.X)) * 0.5
+        var rgtY = ((pFR.Y + pBR.Y) - (pFL.Y + pBL.Y)) * 0.5
+        var rgtZ = ((pFR.Z + pBR.Z) - (pFL.Z + pBL.Z)) * 0.5
+
+        var crossX = fwdY * rgtZ - fwdZ * rgtY
+        var crossY = fwdZ * rgtX - fwdX * rgtZ
+        var crossZ = fwdX * rgtY - fwdY * rgtX
+
+        var cLen = math.Sqrt(crossX * crossX + crossY * crossY + crossZ * crossZ)
+        if cLen > 0.001 {
+            var nY = crossY / cLen
+            if nY >= 0.40 {
+                return Vector3{crossX / cLen, nY, crossZ / cLen}
+            }
+        }
+        return fallbackNormal
+    }
 }

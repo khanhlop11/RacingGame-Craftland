@@ -6,13 +6,21 @@ import "StdLibrary.fcc" as std
 import "Player.fcc" as player
 import "Hud.fcc" as hud
 import "EditorGenLib.fcc" as EditorGenLib
+import "./Kart/KartInputActions.fcg" as KartInputActions
+
 [platform_client]
 graph ResetButton {
-    
-    // Khi nhận thao tác Click
-    event OnPressed(p entity<Player>) {
-        // Gửi thông báo từ UI lên RacingMovementServer (đang ở Server)
-        DispatchEventToEntity(onResetCar, p, PlatformType.Server, nil)
+
+    event OnAwake() {
+        thisEntity<hud.UIWidget>.IsVisible = true
     }
 
+    // Khi nhận thao tác Click / Press
+    event OnPressed(p entity<Player>) {
+        KartInputActions.ResetCar(p)
+    }
+
+    event OnClick(p entity<Player>) {
+        KartInputActions.ResetCar(p)
+    }
 }

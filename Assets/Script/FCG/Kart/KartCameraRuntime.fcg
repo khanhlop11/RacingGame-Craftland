@@ -81,23 +81,23 @@ static graph KartCameraRuntime {
 
     func CalcShakeIntensity(speedRatio float, isBoosting bool, isDriftActive bool, driftBlend float, impactTimer float) float {
         var shakeIntensity = 0.0
-        if speedRatio > 0.75 { shakeIntensity = (speedRatio - 0.75) * 0.25 }
-        if isBoosting { shakeIntensity = 0.42 }
-        if isDriftActive { shakeIntensity += 0.06 * driftBlend }
+        if speedRatio > 0.60 { shakeIntensity = (speedRatio - 0.60) * 0.35 }
+        if isBoosting && shakeIntensity < 0.25 { shakeIntensity = 0.25 }
+        if isDriftActive { shakeIntensity += 0.08 * driftBlend }
         if impactTimer > 0.0 {
-            var landingIntensity = (impactTimer / 0.4) * 1.25
+            var landingIntensity = (impactTimer / 0.4) * 1.15
             if landingIntensity > shakeIntensity { shakeIntensity = landingIntensity }
         }
         return shakeIntensity as float
     }
 
     func CalcShakeX(shakeTime float, shakeIntensity float) float {
-        if shakeIntensity > 0.01 { return (math.Sin(shakeTime * 62.0) * shakeIntensity) as float }
+        if shakeIntensity > 0.01 { return ((math.Sin(shakeTime * 43.0) * 0.65 + math.Sin(shakeTime * 89.0) * 0.35) * shakeIntensity) as float }
         return 0.0 as float
     }
 
     func CalcShakeY(shakeTime float, shakeIntensity float) float {
-        if shakeIntensity > 0.01 { return (math.Cos(shakeTime * 74.0) * shakeIntensity) as float }
+        if shakeIntensity > 0.01 { return ((math.Cos(shakeTime * 51.0) * 0.65 + math.Cos(shakeTime * 97.0) * 0.35) * shakeIntensity) as float }
         return 0.0 as float
     }
 

@@ -12,7 +12,7 @@ static graph KartLifecycle {
         std.SetActive(kartModel as entity, true)
         kartModel<Transform>.Position = raceStartPosition
         kartModel<Transform>.Rotation = Vector3{0.0, yaw, 0.0}
-        kartModel<Rigidbody>.UseGravity = true
+        kartModel<Rigidbody>.UseGravity = false
         // Khóa xoay vật lý để không bị lật khi rơi, cho phép rơi tự do theo trục Y (Constrain = FreezeRotation)
         kartModel<Rigidbody>.Constrain = 112 as RigidbodyConstrainType
         kartModel<Rigidbody>.Velocity = Vector3{0.0, 0.0, 0.0}
@@ -32,6 +32,7 @@ static graph KartLifecycle {
 
     func WakeAndZeroKart(kartModel entity<Entity>) {
         if kartModel == nil { return }
+        kartModel<Rigidbody>.Constrain = 112 as RigidbodyConstrainType
         physics.Wakeup(kartModel as entity<Rigidbody>)
         kartModel<Rigidbody>.Velocity = Vector3{0.0, 0.0, 0.0}
         kartModel<Rigidbody>.AngularVelocity = Vector3{0.0, 0.0, 0.0}

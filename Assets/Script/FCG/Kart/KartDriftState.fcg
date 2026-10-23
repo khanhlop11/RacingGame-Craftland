@@ -59,4 +59,31 @@ static graph KartDriftState {
         if driftState == driftStateAir || driftState == driftStateLanding || driftState == driftStateCrash { return false as bool }
         return (!isBraking && (driftState == driftStateHold || driftState == driftStateEnter)) as bool
     }
+
+    // Asphalt 8 Drift Exit Logic: Nhả phanh xe VẪN GIỮ DRIFT.
+    // Thoát drift khi: kích hoạt Nitro, Counter-steer ngược chiều cua, tốc độ quá thấp, hoặc nhả lái đi thẳng quá thời gian.
+    func ShouldExitDriftAsphalt8(isBoosting bool, speedKmh float, minDriftSpeed float, turnInput float, activeDriftDir float, straightTimer float, maxStraightTime float, driftState int, driftStateHold int, driftStateEnter int, driftStateAir int, driftStateLanding int, driftStateCrash int) bool {
+        if driftState == driftStateAir || driftState == driftStateLanding || driftState == driftStateCrash { return false as bool }
+        if driftState != driftStateHold && driftState != driftStateEnter { return false as bool }
+
+        // 1. Thoát bằng Nitro (Drift Exit With Nitro Burst - chuẩn Asphalt 8)
+        if isBoosting { return true as bool }
+
+        // 2. Tốc độ quá thấp (< minDriftSpeed)
+        if speedKmh < minDriftSpeed { return true as bool }
+
+        // 3. Counter-steer: Bẻ lái ngược chiều cua ban đầu
+        if activeDriftDir != 0.0 && turnInput != 0.0 {
+            if (activeDriftDir * turnInput) < -0.15 {
+                return true as bool
+            }
+        }
+
+        // 4. Nhả lái đi thẳng quá thời gian cho phép (trả thẳng xe)
+        if straightTimer >= maxStraightTime {
+            return true as bool
+        }
+
+        return false as bool
+    }
 }

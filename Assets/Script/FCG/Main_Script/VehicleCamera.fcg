@@ -1,0 +1,406 @@
+import "StdLibrary.fcc" as std
+import "Math.fcc" as math
+import "Camera.fcc" as camera
+import "Time.fcc" as time
+import "Player.fcc" as player
+import "Physics.fcc" as physics
+import "../../../../Temp/UGCLanguage/editorGen/EditorGenLib.fcc" as EditorGenLib
+
+// ============================================================================
+// VEHICLE CAMERA — ASPHALT 8 ARCHITECTURE (CRAFTLAND ENGINE)
+// Gắn vào: Người chơi (Player Component)
+// Camera góc nhìn thứ 3 bám sau xe mượt mà (Smooth Chase Camera)
+// Platform: Client Only
+// ============================================================================
+
+[platform_client]
+graph VehicleCamera {
+
+    // ------------------------------------------------------------------------
+    // MỤC TIÊU & THỰC THỂ CAMERA
+    // ------------------------------------------------------------------------
+    [preview]
+    TargetEntity        entity<Entity>
+    CamEntity           entity<CustomCamera>
+    IsInitialized       bool = false
+    LastTimestamp       int = 0
+
+    // ------------------------------------------------------------------------
+    // THÔNG SỐ TỌA ĐỘ VÀ BÁM ĐUÔI (CAMERA TUNING)
+    // ------------------------------------------------------------------------
+    FollowDistance      float = 5.2     // Cự ly lùi sau xe (m)
+    FollowHeight        float = 2.1     // Độ cao camera so với tâm xe (m)
+    LookAtHeightOffset  float = 0.75    // Cao độ tâm ngắm vào xe (m)
+    PositionLerpSpeed   float = 9.0     // Tốc độ bám vị trí (Lag lò xo mượt mà)
+    RotationLerpSpeed   float = 11.0    // Tốc độ xoay camera bám hướng xe
+    CamFov              float = 60.0    // Góc nhìn thị trường chuẩn khi dừng (BaseFOV = 60.0)
+
+    // ------------------------------------------------------------------------
+    // TRẠNG THÁI NỘI BỘ & CÁC LỚP HIỆU ỨNG (ASPHALT 8 CAMERA LAYERS)
+    // ------------------------------------------------------------------------
+    CurrentCamPos       Vector3 = Vector3{0.0, 0.0, 0.0}
+    CurrentCamYaw       float = 0.0
+    CurrentCamPitch     float = 0.0
+    CurrentCamRoll      float = 0.0     // Nghiêng thân camera khi ôm cua drift (deg)
+    StableHeadingYaw    float = 0.0     // Hướng bay/chạy ổn định (khóa cứng khi stunt)
+    CurrentFov          float = 60.0    // FOV động hiện tại (deg)
+
+    // Lớp Liếc cua Drift (Drift Lookahead Swing)
+    IsVehicleDrifting   bool = false
+    CurrentDriftAngle   float = 0.0
+    CamLookaheadOffset  float = 0.0
+
+    // Lớp Vi rung tốc độ cao & Nitro (Engine Vibration)
+    IsVehicleBoosting   bool = false
+    EngineShakeTimer    float = 0.0
+
+    // Lớp Giật va chạm bờ tường (Wall Impact Jolt)
+    WallImpactTimer     float = 0.0
+    WallImpactIntensity float = 0.0
+    WallImpactDir       Vector3 = Vector3{0.0, 0.0, 0.0}
+
+    // Lớp Giật lún đàn hồi tiếp đất (Landing Impact Compression)
+    LandingDropY        float = 0.0
+
+    // Lớp Camera Điện ảnh cán đích (Asphalt 8 Finish Cam)
+    IsRaceFinishedCam   bool = false
+    FinishOrbitAngle    float = 0.0
+
+    // Đồng bộ trạng thái động học từ VehicleController (Asphalt 8 Trajectory Kinematics)
+    VehicleHeadingYaw   float = 0.0     // Hướng di chuyển ổn định (CurrentYaw, không có góc nhào lộn)
+    VehiclePitch        float = 0.0     // Độ dốc dọc
+    VehicleSpeedMs      float = 0.0     // Vận tốc thực tế (m/s)
+    IsVehicleStunting   bool = false    // Đang thực hiện Flat Spin hoặc Barrel Roll
+
+    event OnAwake() {
+        start InitCameraRoutine()
+    }
+
+    async func InitCameraRoutine() {
+        std.WaitForNextFrame()
+
+        if TargetEntity == nil {
+            TargetEntity = EditorGenLib.EResSceneMainScene.VehicleChassis_Box as entity<Entity>
+        }
+
+        if TargetEntity != nil {
+            InitCamera(TargetEntity)
+        }
+    }
+
+    event OnUpdate() {
+        // Chỉ chạy trên client của người chơi cục bộ
+        var localP = std.GetLocalPlayer()
+        if (thisEntity as entity<Player>) != localP { return }
+
+        if !IsInitialized || TargetEntity == nil {
+            TargetEntity = EditorGenLib.EResSceneMainScene.VehicleChassis_Box as entity<Entity>
+            if TargetEntity != nil {
+                InitCamera(TargetEntity)
+            }
+            return
+        }
+
+        var now = time.GetLocalTimestamp()
+        var dtMs = now - LastTimestamp
+        LastTimestamp = now
+        var dt = 0.033
+        if dtMs > 0 && dtMs < 200 { dt = (dtMs as float) / 1000.0 }
+        UpdateCamera(dt)
+    }
+
+    // ------------------------------------------------------------------------
+    // KHỞI TẠO CAMERA CLIENT
+    // ------------------------------------------------------------------------
+    func InitCamera(target entity<Entity>) {
+        if target == nil { return }
+        TargetEntity = target
+
+        // Tạo CustomCamera mới nếu chưa có
+        if CamEntity == nil {
+            camera.CreateCustomCamera(out var newCam)
+            CamEntity = newCam
+            CamEntity<CustomCamera>.FOV = CamFov
+            camera.SwitchCustomCameraClient(CamEntity, camera.CameraTransitionType.Default, 0.0)
+        }
+
+        SnapToTarget()
+        LastTimestamp = time.GetLocalTimestamp()
+        IsInitialized = true
+    }
+
+    // ------------------------------------------------------------------------
+    // BẮT DÍNH TỨC THÌ (SNAP CAMERA) — Dùng khi Spawn / Reset xe
+    // ------------------------------------------------------------------------
+    func SnapToTarget() {
+        if TargetEntity == nil { return }
+
+        var targetPos = TargetEntity<Transform>.Position
+        var yaw = VehicleHeadingYaw
+        if yaw == 0.0 {
+            var targetRot = TargetEntity<Transform>.Rotation
+            yaw = targetRot.Y
+        }
+
+        StableHeadingYaw = yaw
+        CurrentCamYaw = yaw
+        CurrentCamPitch = 0.0
+        CurrentCamRoll = 0.0
+        CurrentFov = CamFov
+        CamLookaheadOffset = 0.0
+        LandingDropY = 0.0
+        WallImpactTimer = 0.0
+        WallImpactIntensity = 0.0
+        EngineShakeTimer = 0.0
+        IsVehicleDrifting = false
+        CurrentDriftAngle = 0.0
+        IsVehicleBoosting = false
+        IsVehicleStunting = false
+
+        var fwdX = math.Sin(yaw)
+        var fwdZ = math.Cos(yaw)
+
+        CurrentCamPos = Vector3{targetPos.X - fwdX * FollowDistance, targetPos.Y + FollowHeight, targetPos.Z - fwdZ * FollowDistance}
+
+        var focusPos = Vector3{targetPos.X, targetPos.Y + LookAtHeightOffset, targetPos.Z}
+        var dirX = focusPos.X - CurrentCamPos.X
+        var dirY = focusPos.Y - CurrentCamPos.Y
+        var dirZ = focusPos.Z - CurrentCamPos.Z
+
+        CurrentCamYaw = math.ATan2(dirX, dirZ)
+        var distXZ = math.Sqrt(dirX * dirX + dirZ * dirZ)
+        CurrentCamPitch = -math.ATan2(dirY, distXZ)
+
+        if CamEntity != nil {
+            var curCam = camera.GetCurrentCustomCameraClient()
+            if curCam != CamEntity {
+                camera.SwitchCustomCameraClient(CamEntity, camera.CameraTransitionType.Default, 0.0)
+            }
+            CamEntity<CustomCamera>.FOV = CurrentFov
+            CamEntity<Transform>.Position = CurrentCamPos
+            CamEntity<Transform>.Rotation = Vector3{CurrentCamPitch, CurrentCamYaw, CurrentCamRoll}
+        }
+    }
+
+    // ------------------------------------------------------------------------
+    // CẬP NHẬT CHASE CAMERA MỖI FRAME (ASPHALT 8 ARCADE CHASE CAMERA)
+    // ------------------------------------------------------------------------
+    func UpdateCamera(dt float) {
+        if !IsInitialized || TargetEntity == nil || CamEntity == nil { return }
+
+        // Đảm bảo CustomCamera luôn là camera tích cực trên màn hình Client
+        var curCam = camera.GetCurrentCustomCameraClient()
+        if curCam != CamEntity {
+            camera.SwitchCustomCameraClient(CamEntity, camera.CameraTransitionType.Default, 0.0)
+        }
+
+        var targetPos = TargetEntity<Transform>.Position
+        var spdRatio = VehicleSpeedMs / 37.5 // 37.5 m/s = 135 km/h
+        if spdRatio > 1.0 { spdRatio = 1.0 }
+        if spdRatio < 0.0 { spdRatio = 0.0 }
+
+        // 1. KHÓA HƯỚNG NHÌN STUNT (ANTI-DIZZINESS CHUẨN ASPHALT 8)
+        // VehicleHeadingYaw (CurrentYaw từ VehicleController) là hướng quỹ đạo bay/chạy thực tế, KHÔNG BAO GIỜ bị ảnh hưởng bởi góc xoay Stunt (FlatSpinAngle / BarrelRollAngle)!
+        var targetHeading = VehicleHeadingYaw
+        if VehicleHeadingYaw == 0.0 && !IsVehicleStunting {
+            var targetRot = TargetEntity<Transform>.Rotation
+            targetHeading = targetRot.Y
+        }
+
+        var headingDiff = targetHeading - StableHeadingYaw
+        while headingDiff > 180.0 { headingDiff = headingDiff - 360.0 }
+        while headingDiff < -180.0 { headingDiff = headingDiff + 360.0 }
+
+        var headLerp = RotationLerpSpeed * dt
+        if headLerp > 1.0 { headLerp = 1.0 }
+        StableHeadingYaw = StableHeadingYaw + headingDiff * headLerp
+        while StableHeadingYaw > 180.0 { StableHeadingYaw = StableHeadingYaw - 360.0 }
+        while StableHeadingYaw < -180.0 { StableHeadingYaw = StableHeadingYaw + 360.0 }
+
+        // 2. LIẾC CUA DRIFT LOOKAHEAD SWING & CAMERA ROLL (CARCAMERADRIFT)
+        var targetLookahead = 0.0
+        var targetRoll = 0.0
+        if IsVehicleDrifting && !IsVehicleStunting {
+            // Lệch sang mép ngoài cua để lộ góc cua phía trước (k_swing = 0.025)
+            targetLookahead = CurrentDriftAngle * 0.025
+            if targetLookahead > 0.85 { targetLookahead = 0.85 }
+            if targetLookahead < -0.85 { targetLookahead = -0.85 }
+
+            // Nghiêng thân camera nhẹ 2° - 3.5° theo lực cua
+            targetRoll = -CurrentDriftAngle * 0.12
+            if targetRoll > 3.5 { targetRoll = 3.5 }
+            if targetRoll < -3.5 { targetRoll = -3.5 }
+        }
+
+        var lookaheadLerp = 6.0 * dt
+        if lookaheadLerp > 1.0 { lookaheadLerp = 1.0 }
+        CamLookaheadOffset = CamLookaheadOffset + (targetLookahead - CamLookaheadOffset) * lookaheadLerp
+
+        var rollLerp = 8.0 * dt
+        if rollLerp > 1.0 { rollLerp = 1.0 }
+        CurrentCamRoll = CurrentCamRoll + (targetRoll - CurrentCamRoll) * rollLerp
+
+        // 3. ỐNG KÍNH ĐỘNG QUANG HỌC (DYNAMIC SPEED FOV)
+        // 60° (Dừng/chậm) -> 68° (Top Speed 135 km/h) -> 78° (Nitro Boost 180 km/h)
+        var targetFov = CamFov + (spdRatio * 8.0)
+        if IsVehicleBoosting {
+            targetFov = targetFov + 10.0
+        }
+        if IsVehicleDrifting {
+            targetFov = targetFov - 3.0
+        }
+
+        var fovLerp = 8.0 * dt
+        if fovLerp > 1.0 { fovLerp = 1.0 }
+        CurrentFov = CurrentFov + (targetFov - CurrentFov) * fovLerp
+        CamEntity<CustomCamera>.FOV = CurrentFov
+
+        // 4. CỰ LY LÙI ĐỘNG (DYNAMIC FOLLOW DISTANCE)
+        var activeDist = FollowDistance + (spdRatio * 0.85)
+
+        // 5. TỌA ĐỘ CAMERA MỤC TIÊU THEO KHUNG HƯỚNG ỔN ĐỊNH
+        var fwdX = math.Sin(StableHeadingYaw)
+        var fwdZ = math.Cos(StableHeadingYaw)
+        var rgtX = math.Cos(StableHeadingYaw)
+        var rgtZ = -math.Sin(StableHeadingYaw)
+
+        var idealPosX = targetPos.X - fwdX * activeDist + rgtX * CamLookaheadOffset
+        var idealPosY = targetPos.Y + FollowHeight + LandingDropY
+        var idealPosZ = targetPos.Z - fwdZ * activeDist + rgtZ * CamLookaheadOffset
+
+        // Lớp Camera điện ảnh cán đích (Asphalt 8 Finish Orbit Pan)
+        if IsRaceFinishedCam {
+            FinishOrbitAngle = FinishOrbitAngle + 18.0 * dt
+            var finishAngle = StableHeadingYaw + 145.0 + FinishOrbitAngle
+            var sinFA = math.Sin(finishAngle)
+            var cosFA = math.Cos(finishAngle)
+            var finishDist = 6.2
+            idealPosX = targetPos.X + sinFA * finishDist
+            idealPosY = targetPos.Y + 1.85
+            idealPosZ = targetPos.Z + cosFA * finishDist
+            targetFov = 52.0
+            CamLookaheadOffset = 0.0
+            CurrentCamRoll = 0.0
+        }
+
+        var posLerpFactor = PositionLerpSpeed * dt
+        if posLerpFactor > 1.0 { posLerpFactor = 1.0 }
+
+        var nx = CurrentCamPos.X + (idealPosX - CurrentCamPos.X) * posLerpFactor
+        var ny = CurrentCamPos.Y + (idealPosY - CurrentCamPos.Y) * posLerpFactor
+        var nz = CurrentCamPos.Z + (idealPosZ - CurrentCamPos.Z) * posLerpFactor
+        CurrentCamPos = Vector3{nx, ny, nz}
+
+        // 6. GIẢM CHẤN LÚN TIẾP ĐẤT (LANDING SPRING DAMPING: zeta = 1.0)
+        if LandingDropY < -0.001 {
+            LandingDropY = LandingDropY + (0.0 - LandingDropY) * 12.0 * dt
+            if LandingDropY > -0.005 { LandingDropY = 0.0 }
+        }
+
+        // 7. VI RUNG TỐC ĐỘ CAO & NITRO (ENGINE VIBRATION: omega = 38 rad/s)
+        var shakeX = 0.0
+        var shakeY = 0.0
+        if VehicleSpeedMs > 14.0 || IsVehicleBoosting {
+            EngineShakeTimer = EngineShakeTimer + dt
+            var shakeAmp = 0.015 * spdRatio
+            if IsVehicleBoosting { shakeAmp = shakeAmp + 0.020 }
+            shakeX = math.Sin(EngineShakeTimer * 38.0) * shakeAmp
+            shakeY = math.Cos(EngineShakeTimer * 47.0) * (shakeAmp * 0.65)
+        }
+
+        // 8. ĐỘ GIẬT LỆCH TÂM KHI ĐÂM TƯỜNG (WALL IMPACT JOLT)
+        var wallJoltX = 0.0
+        var wallJoltY = 0.0
+        var wallJoltZ = 0.0
+        if WallImpactTimer > 0.0 {
+            WallImpactTimer = WallImpactTimer - dt
+            if WallImpactTimer < 0.0 { WallImpactTimer = 0.0 }
+            var impactFactor = WallImpactTimer / 0.25
+            wallJoltX = WallImpactDir.X * (WallImpactIntensity * impactFactor)
+            wallJoltY = WallImpactDir.Y * (WallImpactIntensity * impactFactor)
+            wallJoltZ = WallImpactDir.Z * (WallImpactIntensity * impactFactor)
+        }
+
+        var finalCamX = CurrentCamPos.X + shakeX + wallJoltX
+        var finalCamY = CurrentCamPos.Y + shakeY + wallJoltY
+        var finalCamZ = CurrentCamPos.Z + wallJoltZ
+
+        // 9. ĐIỂM NGẮM VÀO XE (FOCUS POINT & ROTATION LERP)
+        var focusX = targetPos.X
+        var focusY = targetPos.Y + LookAtHeightOffset
+        var focusZ = targetPos.Z
+
+        var dirX = focusX - finalCamX
+        var dirY = focusY - finalCamY
+        var dirZ = focusZ - finalCamZ
+
+        var targetYaw = math.ATan2(dirX, dirZ)
+        var distXZ = math.Sqrt(dirX * dirX + dirZ * dirZ)
+        var targetPitch = -math.ATan2(dirY, distXZ)
+
+        var yawDiff = targetYaw - CurrentCamYaw
+        while yawDiff > 180.0 { yawDiff = yawDiff - 360.0 }
+        while yawDiff < -180.0 { yawDiff = yawDiff + 360.0 }
+
+        var rotLerpFactor = RotationLerpSpeed * dt
+        if rotLerpFactor > 1.0 { rotLerpFactor = 1.0 }
+
+        CurrentCamYaw = CurrentCamYaw + yawDiff * rotLerpFactor
+        CurrentCamPitch = CurrentCamPitch + (targetPitch - CurrentCamPitch) * rotLerpFactor
+
+        CamEntity<Transform>.Position = Vector3{finalCamX, finalCamY, finalCamZ}
+        CamEntity<Transform>.Rotation = Vector3{CurrentCamPitch, CurrentCamYaw, CurrentCamRoll}
+    }
+
+    // ------------------------------------------------------------------------
+    // KÍCH HOẠT HIỆU ỨNG GIẬT VA CHẠM TƯỜNG (WALL IMPACT JOLT)
+    // ------------------------------------------------------------------------
+    func TriggerWallImpact(norm Vector3, intensity float) {
+        WallImpactDir = norm
+        WallImpactIntensity = intensity
+        WallImpactTimer = 0.25
+        camera.PlayCustomCameraShake(norm, intensity * 2.5, 30.0, 10, 150, 250)
+    }
+
+    // ------------------------------------------------------------------------
+    // KÍCH HOẠT HIỆU ỨNG THỤT LÚN ĐÀN HỒI TIẾP ĐẤT (LANDING COMPRESSION)
+    // ------------------------------------------------------------------------
+    func TriggerLandingImpact(impactSpeed float) {
+        var drop = -0.015 * impactSpeed
+        if drop < -0.35 { drop = -0.35 }
+        if drop > -0.08 { drop = -0.08 }
+        LandingDropY = drop
+        camera.PlayCustomCameraShake(Vector3{0.0, 1.0, 0.0}, 0.22, 24.0, 10, 180, 300)
+    }
+
+    // ------------------------------------------------------------------------
+    // ĐỒNG BỘ TRẠNG THÁI XE TỪ VEHICLE CONTROLLER (ASPHALT 8 KINEMATICS)
+    // ------------------------------------------------------------------------
+    func SyncVehicleState(headingYaw float, pitch float, speedMs float, isDrifting bool, driftAngle float, isBoosting bool, isStunting bool) {
+        if !IsVehicleBoosting && isBoosting {
+            // Cú giật tức thời khi vừa xịt Nitro (Asphalt 8 Nitro Kick)
+            camera.PlayCustomCameraShake(Vector3{0.03, 0.05, 0.03}, 0.12, 35.0, 10, 80, 250)
+        }
+        VehicleHeadingYaw = headingYaw
+        VehiclePitch = pitch
+        VehicleSpeedMs = speedMs
+        IsVehicleDrifting = isDrifting
+        CurrentDriftAngle = driftAngle
+        IsVehicleBoosting = isBoosting
+        IsVehicleStunting = isStunting
+    }
+
+    func UpdateDriftState(isDrifting bool, driftAngle float, isBoosting bool) {
+        if !IsVehicleBoosting && isBoosting {
+            camera.PlayCustomCameraShake(Vector3{0.03, 0.05, 0.03}, 0.12, 35.0, 10, 80, 250)
+        }
+        IsVehicleDrifting = isDrifting
+        CurrentDriftAngle = driftAngle
+        IsVehicleBoosting = isBoosting
+    }
+
+    func TriggerFinishCam() {
+        IsRaceFinishedCam = true
+        FinishOrbitAngle = 0.0
+    }
+}
