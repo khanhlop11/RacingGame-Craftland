@@ -1,6 +1,8 @@
 # Max Speed — High-Speed Arcade Racing & Vehicle Physics Engine
 
-Hệ thống mô phỏng động học xe đua tốc độ cao và trò chơi đua xe Arcade được phát triển trên nền tảng **Garena Craftland Studio**, sử dụng ngôn ngữ lập trình hướng đối tượng tĩnh **FCG** (Free Fire Craftland Scripting Language).
+Trò chơi đua xe Arcade được phát triển trên nền tảng **Garena Craftland Studio**, sử dụng ngôn ngữ lập trình hướng đối tượng tĩnh **FCG** (Free Fire Craftland Scripting Language).
+
+Ý tưởng dựa trên các game đua xe phổ biến làm nền tảng bao gồm : Asphalt8, ZingSpeed, Ace Racer, Mario Kart,...
 
 Toàn bộ hệ thống vật lý xe (chuyển động, drift, độ bám mặt đường, chống xuyên vật thể), camera đuổi động (Chase Camera) và phân tách mạng Client - Server đều được tự lập trình hoàn toàn trong mã nguồn FCG.
 
