@@ -1,4 +1,4 @@
-# Max Speed — High-Speed Arcade Racing & Vehicle Physics Engine
+# X Nitro — High-Speed Arcade Racing & Vehicle Physics Engine
 
 Trò chơi đua xe Arcade được phát triển trên nền tảng **Garena Craftland Studio**, sử dụng ngôn ngữ lập trình hướng đối tượng tĩnh **FCG** (Free Fire Craftland Scripting Language).
 
